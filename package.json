@@ -1,0 +1,69 @@
+{
+  "name": "dream-local-crm",
+  "version": "0.1.0",
+  "private": true,
+  "main": "electron/main.cjs",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node server.js",
+    "electron:dev": "electron electron/main.cjs",
+    "build:icon": "node scripts/make-icon.cjs",
+    "dist": "npm run build:icon && electron-builder --win nsis --publish never",
+    "dist:portable": "npm run build:icon && electron-builder --win portable --publish never",
+    "export:data": "node scripts/export-runtime-data.mjs"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.18.3",
+    "playwright": "^1.61.1"
+  },
+  "devDependencies": {
+    "electron": "^42.5.0",
+    "electron-builder": "^26.15.3",
+    "png-to-ico": "^3.0.1"
+  },
+  "build": {
+    "appId": "com.agencyos.dreamlocalcrm",
+    "productName": "AgencyOS",
+    "copyright": "Copyright © 2026 AgencyOS",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "server.js",
+      "package.json",
+      "electron/**/*",
+      "public/**/*",
+      "scripts/export-runtime-data.mjs",
+      "scripts/make-icon.cjs"
+    ],
+    "asar": true,
+    "asarUnpack": [
+      "node_modules/playwright/**/*",
+      "node_modules/playwright-core/**/*"
+    ],
+    "win": {
+      "icon": "public/assets/app-logo.ico",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "artifactName": "AgencyOS-Setup-${version}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "AgencyOS"
+    }
+  }
+}

@@ -1,0 +1,1198 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AgencyOS</title>
+  <link rel="icon" type="image/png" sizes="16x16" href="assets/favicon-16.png?v=20260626-app-logo-a-1">
+  <link rel="icon" type="image/png" sizes="32x32" href="assets/favicon-32.png?v=20260626-app-logo-a-1">
+  <link rel="icon" type="image/png" sizes="48x48" href="assets/favicon-48.png?v=20260626-app-logo-a-1">
+  <link rel="icon" type="image/png" sizes="256x256" href="assets/app-logo.png?v=20260626-app-logo-a-1">
+  <link rel="apple-touch-icon" sizes="180x180" href="assets/apple-touch-icon.png?v=20260626-app-logo-a-1">
+  <link rel="preload" as="image" href="assets/dream-team-login.webp?v=20260623-login-fast-1" type="image/webp" fetchpriority="high">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css?v=20260626-app-update-1">
+  <style>
+    body.mandarin-home-active { min-height: 100vh !important; overflow: hidden !important; background: #0f1626 !important; }
+    body.mandarin-home-active .app-layout,
+    body.mandarin-home-active:not(.agency-profile-choice-modal) .profile-choice-screen,
+    body.mandarin-home-active .activation-screen,
+    body.mandarin-home-active .admin-modal,
+    body.mandarin-home-active .lady-connection-gate,
+    body.mandarin-home-active:not(.agency-profile-connecting) .lady-connecting-screen { display: none !important; }
+    .mandarin-home-screen.hidden { display: none !important; }
+    .mandarin-home-screen { position: fixed; inset: 0; z-index: 1000; display: grid; grid-template-columns: 212px minmax(0, 1fr); background: #151311; color: #f5eee9; font-family: Montserrat, Arial, sans-serif; }
+    body.agency-shell-collapsed .mandarin-home-screen { grid-template-columns: 68px minmax(0, 1fr); }
+    .agency-shell-sidebar { min-width: 0; min-height: 100vh; display: flex; flex-direction: column; background: #151311; color: #f5eee9; border-right: 1px solid #2d261f; }
+    .agency-shell-brand { min-height: 65px; display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 0 12px 0 22px; border-bottom: 1px solid #2d261f; color: #fff; font-size: 19px; font-weight: 800; }
+    .agency-shell-collapse { width: 30px; height: 30px; border: 1px solid #3a312a; border-radius: 8px; background: #1b1816; color: #f5eee9; cursor: pointer; }
+    .agency-shell-nav { padding: 16px 8px 0; display: flex; flex-direction: column; gap: 6px; }
+    .agency-shell-nav-label { padding: 0 6px 8px; color: #b9aaa0; font-size: 12px; font-weight: 700; }
+    .agency-shell-nav-item { width: 100%; height: 42px; display: flex; align-items: center; gap: 11px; padding: 0 12px; border: 0; border-radius: 7px; background: transparent; color: #d8cec6; font: inherit; font-size: 13px; font-weight: 600; text-align: left; cursor: pointer; }
+    .agency-shell-nav-item:hover, .agency-shell-nav-item.active { background: #2b211d; color: #fff; }
+    .agency-shell-nav-icon { width: 17px; height: 17px; display: inline-grid; place-items: center; color: #b9aaa0; }
+    .agency-shell-nav-icon svg { width: 17px; height: 17px; display: block; stroke: currentColor; }
+    .agency-shell-user { margin-top: auto; min-height: 58px; display: flex; align-items: center; gap: 10px; padding: 12px 16px; border-top: 1px solid #2d261f; }
+    .agency-shell-avatar { width: 34px; height: 34px; flex: 0 0 34px; border-radius: 999px; display: grid; place-items: center; background: #d1785f; color: #fff; font-size: 14px; font-weight: 800; }
+    .agency-shell-user-copy { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+    .agency-shell-user-copy strong, .agency-shell-user-copy span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; letter-spacing: 0; }
+    .agency-shell-user-copy strong { color: #fff; font-size: 12px; font-weight: 800; }
+    .agency-shell-user-copy span { color: #b9aaa0; font-size: 11px; font-weight: 500; }
+    .agency-shell-main { min-width: 0; min-height: 100vh; background: #151311; }
+    .agency-account-manager { min-height: 100vh; padding: 24px 28px; background: #151311; box-sizing: border-box; }
+    .agency-account-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 18px; margin-bottom: 16px; }
+    .agency-account-search { width: min(448px, 100%); height: 48px; display: flex; align-items: center; gap: 12px; padding: 0 14px; border: 1px solid #3a312a; border-radius: 7px; background: #1b1816; color: #b9aaa0; box-sizing: border-box; }
+    .agency-account-search input { flex: 1; min-width: 0; border: 0; outline: 0; background: transparent; color: #fff; font: inherit; font-size: 13px; }
+    .agency-account-search input::placeholder { color: #8f8076; opacity: 1; }
+    .agency-account-search b { min-width: 36px; height: 28px; display: grid; place-items: center; border-radius: 7px; background: #2b211d; color: #f2d1c5; font-size: 12px; }
+    .agency-add-profile-btn { height: 48px; padding: 0 22px; border: 1px solid #d1785f; border-radius: 7px; background: #d1785f; color: #fff; font: inherit; font-size: 14px; font-weight: 800; cursor: pointer; }
+    .agency-account-status { min-height: 18px; margin-bottom: 8px; color: #d8cec6; font-size: 12px; font-weight: 700; }
+    .agency-account-table-wrap { overflow: visible; border-radius: 7px; background: #151311; }
+    .agency-account-table { width: 100%; border-collapse: separate; border-spacing: 0; color: #fff; font-size: 13px; }
+    .agency-account-table th { height: 51px; padding: 0 16px; background: #1b1816; color: #f5eee9; text-align: left; font-size: 12px; font-weight: 800; border-right: 1px solid #2d261f; }
+    .agency-account-table td { height: 52px; padding: 0 16px; background: #201c19; color: #f5eee9; border-top: 1px solid #2d261f; border-right: 1px solid #2d261f; vertical-align: middle; }
+    .agency-account-table tbody tr:nth-child(even) td { background: #241f1b; }
+    .agency-col-select { width: 42px; text-align: center !important; padding: 0 !important; }
+    .agency-col-number { width: 44px; text-align: center !important; padding: 0 !important; }
+    .agency-col-select input { width: 20px; height: 20px; accent-color: #49799a; }
+    .agency-profile-id { font-weight: 800; }
+    .agency-assignment-select { width: 100%; height: 30px; padding: 0 12px; border: 1px solid #4a4038; border-radius: 7px; background: #1b1816; color: #f5eee9; font: inherit; font-size: 13px; outline: 0; }
+    .agency-account-empty { height: 96px !important; text-align: center; color: #b9aaa0; }
+    body.agency-shell-collapsed .agency-shell-brand-text, body.agency-shell-collapsed .agency-shell-nav-label, body.agency-shell-collapsed .agency-shell-nav-item span:not(.agency-shell-nav-icon), body.agency-shell-collapsed .agency-shell-user-copy { display: none; }
+    body.agency-shell-collapsed .agency-shell-brand { justify-content: center; padding: 0; }
+    body.agency-shell-collapsed .agency-shell-nav { padding: 16px 8px 0; }
+    body.agency-shell-collapsed .agency-shell-nav-item { justify-content: center; padding: 0; }
+    body.agency-shell-collapsed .agency-shell-user { justify-content: center; padding: 12px 0; }
+    body.agency-shell-light .mandarin-home-screen, body.agency-shell-light .agency-account-manager, body.agency-shell-light .agency-shell-main { background: #f7f1ed; color: #241f1b; }
+    body.agency-shell-light .agency-shell-sidebar { background: #080807; color: #f5eee9; border-right-color: #24211f; }
+    body.agency-shell-light .agency-shell-brand, body.agency-shell-light .agency-shell-user { border-color: #24211f; color: #fff; }
+    body.agency-shell-light .agency-shell-nav-label, body.agency-shell-light .agency-shell-user-copy span { color: #b9aaa0; }
+    body.agency-shell-light .agency-shell-nav-item { color: #d8cec6; }
+    body.agency-shell-light .agency-shell-nav-item:hover, body.agency-shell-light .agency-shell-nav-item.active { background: #2b211d; color: #fff; }
+    body.agency-shell-light .agency-account-search, body.agency-shell-light .agency-shell-collapse { border-color: #eadbd4; background: #fffdfb; color: #241f1b; }
+    body.agency-shell-light .agency-account-search input, body.agency-shell-light .agency-assignment-select { color: #241f1b; }
+    body.agency-shell-light .agency-account-table th { background: #fffdfb; color: #241f1b; border-color: #eadbd4; }
+    body.agency-shell-light .agency-account-table td { background: #fffaf7; color: #241f1b; border-color: #eadbd4; }
+    body.agency-shell-light .agency-account-table tbody tr:nth-child(even) td { background: #f7eee9; }
+    body.agency-shell-light .agency-assignment-select { border-color: #eadbd4; background: #fffdfb; }
+  </style>
+</head>
+<body>
+<script>
+  (() => {
+    document.body.classList.add('auth-pending');
+    const profileId = localStorage.getItem('dream_crm_profile_id') || '';
+    const connected = localStorage.getItem(`dream_team_lady_connected_${profileId}`) === '1';
+    document.body.classList.toggle('lady-disconnected', !connected);
+    document.body.classList.toggle('lady-session-checking', connected);
+  })();
+</script>
+
+<div class="app-layout">
+
+  <aside class="sidebar">
+    <div class="sidebar-logo">
+      <div class="sidebar-logo-icon"><img src="assets/sidebar-logo.png?v=20260621-knot-round" alt="HNCSOS"></div>
+      <div class="sidebar-logo-text">HNCSOS</div>
+    </div>
+
+    <button id="sidebarCollapseBtn" class="sidebar-collapse" type="button" title="Collapse menu" aria-label="Collapse menu"></button>
+
+    <nav class="sidebar-nav">
+      <button id="workspaceNavLink" class="sidebar-link" type="button">
+        <span class="sidebar-link-icon sidebar-link-icon-mail">📩</span>
+        <span>Inbox</span>
+      </button>
+      <button id="favoritesNavBtn" class="sidebar-link active" type="button">
+        <span class="sidebar-link-icon">&#11088;</span>
+        <span>Favorites</span>
+      </button>
+      <button id="chatFavoritesNavBtn" class="sidebar-link" type="button">
+        <span class="sidebar-link-icon">&#128172;</span>
+        <span>Chat Favorite</span>
+      </button>
+      <button id="googleDriveNavBtn" class="sidebar-link" type="button">
+        <span class="sidebar-link-icon sidebar-link-icon-drive" aria-hidden="true">
+          <img src="assets/google-drive.png?v=20260623-drive-icon-source-2" alt="">
+        </span>
+        <span>Google Drive</span>
+      </button>
+      <button id="myStatsNavBtn" class="sidebar-link sidebar-link-stats hidden" type="button">
+        <span class="sidebar-link-icon" aria-hidden="true">📊</span>
+        <span>Dashboard</span>
+      </button>
+      <button id="adminPanelNavBtn" class="sidebar-link sidebar-link-admin hidden" type="button">
+        <span class="sidebar-link-icon" aria-hidden="true">▦</span>
+        <span>Admin Panel</span>
+      </button>
+    </nav>
+    <button id="adminBtn" class="sidebar-settings hidden" type="button">
+      <span class="sidebar-settings-icon">&#9881;</span>
+      <span>Settings</span>
+    </button>
+    <button id="logoutBtn" class="sidebar-logout" type="button" title="Logout" aria-label="Logout">
+      <span class="sidebar-logout-icon" aria-hidden="true">⏻</span>
+      <span class="sidebar-logout-label">Logout</span>
+    </button>
+    <div class="sidebar-user">
+      <div id="sidebarUserAvatar" class="sidebar-user-avatar">V</div>
+      <div class="sidebar-user-copy">
+        <strong id="sidebarUserName">User</strong>
+        <small id="sidebarUserRole"></small>
+      </div>
+    </div>
+  </aside>
+
+  <div class="content">
+
+    <header class="crm-header">
+      <div id="profileSwitcher" class="profile-switcher">
+        <button id="profileSwitcherBtn" class="profile-switcher-button" type="button">
+          <span id="activeProfileAvatarWrap" class="profile-avatar-placeholder">
+            <img id="activeProfileAvatar" class="active-profile-avatar" alt="">
+          </span>
+          <span class="profile-switcher-copy">
+            <strong id="activeProfileName">Select Profile</strong>
+            <small id="activeProfileIdLabel"></small>
+          </span>
+        </button>
+        <div id="profileMenu" class="profile-menu hidden"></div>
+        <select id="profileSelect" class="hidden" aria-label="Active profile"></select>
+      </div>
+      <div id="statsModeTabs" class="stats-mode-tabs hidden" role="tablist" aria-label="Dashboard balance mode">
+        <button id="statsProfileBalanceBtn" class="stats-mode-tab active" type="button" data-stats-mode="profile" role="tab" aria-selected="true">Profile Balance</button>
+        <button id="statsMyBalanceBtn" class="stats-mode-tab" type="button" data-stats-mode="fixed" role="tab" aria-selected="false">My Salary</button>
+      </div>
+      <div class="crm-search-wrap">
+        <span class="crm-search-icon">&#128269;</span>
+        <input id="searchInput" class="crm-search" type="search" placeholder="Search By Name Or ID..." autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
+      </div>
+      <div class="chat-add-man chat-header-add-man">
+        <input id="chatManIdInput" type="text" inputmode="numeric" placeholder="Enter man ID">
+        <button id="chatAddManBtn" type="button">Add man</button>
+      </div>
+      <div class="online-controls">
+        <button id="onlineFilterBtn" class="online-filter-btn" type="button" aria-pressed="false">
+          Only Online
+        </button>
+      </div>
+
+      <div class="sync-panel">
+        <div class="sync-state">
+          <span id="extensionDot" class="extension-dot"></span>
+          <div>
+            <strong id="extensionStatus">Checking Extension...</strong>
+            <div id="extensionProgress" class="extension-progress"></div>
+          </div>
+        </div>
+        <button id="dailySyncBtn" class="sync-btn" type="button">Update</button>
+        <button id="fullSyncBtn" class="sync-btn secondary" type="button">Full Scan</button>
+      </div>
+
+      <div class="crm-counter">
+        <strong id="menCount">0</strong>
+      </div>
+      <button id="openLadyBtn" class="header-account open-lady-btn" type="button">Connect My Lady</button>
+    </header>
+
+    <main id="favoritesView">
+
+      <div id="favoritesBlock" class="favorites-card">
+        <div class="favorites-header">
+          <div>
+            <div class="favorites-title">&#9733; Important Men</div>
+            <div class="favorites-subtitle">Favorite Men Always Stay At The Top</div>
+          </div>
+          <div id="favoritesCount" class="favorites-count">0</div>
+        </div>
+
+        <div id="favoritesList" class="favorites-list">
+          <div class="favorites-empty">No Favorite Men</div>
+        </div>
+      </div>
+
+      <div class="table-card">
+        <table>
+          <thead>
+            <tr>
+              <th>&#9733;</th>
+              <th>NAME / PROFILE</th>
+              <th>CLIENT ID</th>
+              <th>LETTERS</th>
+              <th class="pin-column-heading"></th>
+              <th>NOTES</th>
+              <th>TYPE</th>
+              <th>CONTACT DATE</th>
+              <th>ACTIONS</th>
+            </tr>
+          </thead>
+          <tbody id="tbody"></tbody>
+        </table>
+      </div>
+
+    </main>
+
+    <main id="chatFavoritesView" class="chat-favorites-view hidden">
+      <section class="chat-favorites-card">
+        <div class="chat-favorites-heading">
+          <div>
+            <h2>Chat Favorite</h2>
+          </div>
+        </div>
+        <div id="chatFavoritesStatus" class="chat-favorites-status"></div>
+        <div class="chat-favorites-table-wrap">
+          <table class="chat-favorites-table">
+            <thead>
+              <tr>
+                <th title="Favorite">★</th>
+                <th>NAME / PROFILE</th>
+                <th>CLIENT ID</th>
+                <th>LAST ACTIVITY</th>
+                <th>NOTES</th>
+                <th>TYPE</th>
+                <th>ACTIONS</th>
+              </tr>
+            </thead>
+            <tbody id="chatFavoritesBody"></tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+
+    <main id="workspaceView" class="workspace-embed-view hidden">
+      <iframe id="workspaceEmbedFrame" class="workspace-embed-frame" src="workspace.html?embedded=1&v=20260626-no-empty-letter-pages-1" title="Inbox"></iframe>
+    </main>
+
+    <main id="myStatsView" class="my-stats-view hidden">
+      <section class="my-stats-card">
+        <div class="my-stats-heading">
+          <div>
+            <h2>Dashboard</h2>
+            <p>Agency bonuses loaded by the CRM server.</p>
+          </div>
+        </div>
+        <div id="myStatsSummary" class="my-stats-summary">Choose dates and load stats.</div>
+        <div class="my-stats-dashboard" aria-label="Stats dashboard">
+          <div class="my-stats-metric">
+            <span class="my-stats-metric-icon my-stats-metric-green">$</span>
+            <span>Total Earnings</span>
+            <strong id="myStatsTotal">$0.00</strong>
+            <div class="my-stats-metric-details">
+              <div><span>With gifts</span><b id="myStatsTotalWith">$0</b></div>
+              <div><span>Without gifts</span><b id="myStatsTotalMeta">$0</b></div>
+            </div>
+          </div>
+          <div class="my-stats-metric">
+            <span class="my-stats-metric-icon my-stats-metric-yellow">Gift</span>
+            <span>Gifts</span>
+            <strong id="myStatsGifts">$0.00</strong>
+            <div class="my-stats-metric-details">
+              <div><span>Total</span><b id="myStatsGiftsTotal">$0</b></div>
+              <div><span>This week</span><b id="myStatsGiftsMeta">$0</b></div>
+            </div>
+          </div>
+          <div class="my-stats-metric">
+            <span class="my-stats-metric-icon my-stats-metric-red">!</span>
+            <span>Penalties</span>
+            <strong id="myStatsPenalties">$0.00</strong>
+            <div class="my-stats-metric-details">
+              <div><span>Total</span><b id="myStatsPenaltiesTotal">$0</b></div>
+              <div><span>This week</span><b id="myStatsPenaltiesMeta">$0</b></div>
+            </div>
+          </div>
+          <div class="my-stats-methods">
+            <div class="my-stats-methods-head">
+              <strong>Revenue by Method</strong>
+            </div>
+            <div class="my-stats-methods-body is-empty">
+              <div id="myStatsDonut" class="my-stats-donut" aria-hidden="true">
+                <span>Total</span>
+                <strong id="myStatsMethodsTotal">$0</strong>
+              </div>
+              <div id="myStatsMethodsLegend" class="my-stats-methods-legend">
+                <div class="my-stats-method-empty-state">
+                  <span class="my-stats-empty-chart" aria-hidden="true"></span>
+                  <span>No data available</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="my-stats-lower-grid">
+          <div id="myStatsTransactionsCard" class="my-stats-transactions-card">
+            <div class="my-stats-panel-head">
+              <h3>Recent Transactions</h3>
+              <div class="my-stats-filters">
+                <label>
+                  <span>From</span>
+                  <input id="myStatsFrom" type="date">
+                </label>
+                <span class="my-stats-date-separator">to</span>
+                <label>
+                  <span>To</span>
+                  <input id="myStatsTo" type="date">
+                </label>
+                <button id="myStatsLoadBtn" type="button" aria-label="Load stats"></button>
+              </div>
+            </div>
+            <div class="my-stats-table-wrap">
+              <div class="my-stats-grid" role="table" aria-label="Agency bonuses">
+                <div class="my-stats-row my-stats-row-head" role="row">
+                  <div role="columnheader">Amount</div>
+                  <div role="columnheader">Type</div>
+                  <div role="columnheader">By Whom</div>
+                  <div role="columnheader">To</div>
+                  <div role="columnheader">Date</div>
+                </div>
+                <div id="myStatsBody" class="my-stats-body"></div>
+              </div>
+            </div>
+            <div id="fixedBalanceCard" class="fixed-balance-card">
+              <div class="fixed-balance-head">
+                <div>
+                  <h3>My Salary</h3>
+                  <p>Current month salary from the 1st day to today.</p>
+                </div>
+                <button id="fixedBalanceRefreshBtn" type="button">Refresh</button>
+              </div>
+              <div class="fixed-balance-summary">
+                <div><span>Total balance</span><strong id="fixedBalanceTotal">$0</strong></div>
+                <div><span id="fixedBalanceBaseLabel">Balance - 5%</span><strong id="fixedBalanceBase">$0</strong></div>
+                <div><span>Percent</span><strong id="fixedBalancePercent">0%</strong></div>
+                <div><span>Total salary</span><strong id="fixedBalanceSalary">$0</strong></div>
+              </div>
+              <div class="fixed-balance-columns">
+                <div>
+                  <h4>Profiles</h4>
+                  <div id="fixedBalanceProfiles" class="fixed-balance-list"></div>
+                </div>
+              </div>
+              <div id="fixedBalanceCalendar" class="fixed-balance-calendar">
+                <div class="fixed-balance-calendar-head">
+                  <button id="salaryCalendarPrevBtn" type="button" aria-label="Previous month">&lt;</button>
+                  <strong id="salaryCalendarTitle">Month</strong>
+                  <button id="salaryCalendarNextBtn" type="button" aria-label="Next month">&gt;</button>
+                </div>
+                <div class="fixed-balance-calendar-body">
+                  <div id="salaryCalendarGrid" class="salary-calendar-grid"></div>
+                  <aside class="salary-day-panel">
+                    <div>
+                      <strong id="salaryDayTitle">Select a day</strong>
+                      <small id="salaryDayTotal">$0</small>
+                    </div>
+                    <div id="salaryDayProfiles" class="salary-day-profiles"></div>
+                  </aside>
+                </div>
+              </div>
+              <div id="fixedBalanceRows" class="fixed-balance-ledger"></div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <main id="adminPanelView" class="admin-panel-view hidden">
+      <section class="admin-panel-card">
+        <div class="admin-panel-head">
+          <div class="admin-panel-toolbar">
+            <button id="adminPanelCloseBtn" class="admin-panel-back-link" type="button">← Back</button>
+            <div class="admin-panel-title">Admin Panel</div>
+            <label class="admin-panel-month-control">
+              <span id="adminPanelMonthText">June 2026</span>
+              <input id="adminPanelMonthInput" type="month">
+            </label>
+            <div id="adminPanelAdminSwitch" class="admin-panel-admin-switch hidden" aria-label="Choose administrator"></div>
+          </div>
+          <button id="adminPanelRefreshBtn" type="button">Refresh</button>
+        </div>
+        <p id="adminPanelTodayLabel" class="admin-panel-month-label"></p>
+        <div class="admin-panel-summary">
+          <div><span>Selected day</span><strong id="adminPanelTotal">$0</strong></div>
+          <div><span>Operators</span><strong id="adminPanelOperatorsCount">0</strong></div>
+          <div><span>Profiles</span><strong id="adminPanelRowsCount">0</strong></div>
+        </div>
+        <div id="adminPanelStatus" class="admin-panel-status"></div>
+        <div id="adminPanelOperators" class="admin-panel-operators"></div>
+      </section>
+    </main>
+
+  </div>
+</div>
+
+<div id="mandarinHomeScreen" class="mandarin-home-screen hidden" aria-hidden="true">
+  <aside class="agency-shell-sidebar">
+    <div class="agency-shell-brand"><span class="agency-shell-brand-text">AgencyOS</span><button id="agencyShellCollapse" class="agency-shell-collapse" type="button" title="Collapse sidebar" aria-label="Collapse sidebar">‹</button></div>
+    <nav class="agency-shell-nav" aria-label="Main navigation">
+      <div class="agency-shell-nav-label">MAIN</div>
+      <button class="agency-shell-nav-item active" type="button" data-agency-view="account-manager">
+        <span class="agency-shell-nav-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/>
+            <circle cx="9" cy="7" r="4"/>
+            <path d="M22 21v-2a4 4 0 0 0-3-3.87"/>
+            <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+          </svg>
+        </span>
+        <span>Account Manager</span>
+      </button>
+      <button class="agency-shell-nav-item" type="button" data-agency-view="dashboard">
+        <span class="agency-shell-nav-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="9"/>
+            <path d="M12 7v10"/>
+            <path d="M15 9.5c-.55-.7-1.45-1.1-2.55-1.1h-.8c-1.15 0-2.1.72-2.1 1.85 0 1.2 1.05 1.62 2.45 1.86l.85.15c1.4.25 2.45.68 2.45 1.9 0 1.16-.97 1.94-2.18 1.94h-.9c-1.2 0-2.18-.42-2.82-1.2"/>
+          </svg>
+        </span>
+        <span>Dashboard</span>
+      </button>
+      <button class="agency-shell-nav-item" type="button" data-agency-view="inbox">
+        <span class="agency-shell-nav-icon agency-shell-nav-icon-inbox" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M4 5.5h16v10.2a2.8 2.8 0 0 1-2.8 2.8H6.8A2.8 2.8 0 0 1 4 15.7V5.5Z"/>
+            <path d="M5.2 6.7 11 12a1.5 1.5 0 0 0 2 0l5.8-5.3"/>
+            <path d="M8 15h2.2"/>
+            <path d="M14 15h2"/>
+          </svg>
+        </span>
+        <span>Inbox</span>
+      </button>
+      <button class="agency-shell-nav-item" type="button" data-agency-view="favorites">
+        <span class="agency-shell-nav-icon agency-shell-nav-icon-favorites" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="m12 3.6 2.65 5.37 5.92.86-4.29 4.18 1.01 5.9L12 17.13l-5.29 2.78 1.01-5.9-4.29-4.18 5.92-.86L12 3.6Z"/>
+            <path d="M12 8.4v4.1"/>
+            <path d="M10 10.45h4"/>
+          </svg>
+        </span>
+        <span>Favorites</span>
+      </button>
+      <button class="agency-shell-nav-item" type="button" data-agency-view="letterbot">
+        <span class="agency-shell-nav-icon agency-shell-nav-icon-letterbot" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M3.5 7.5h10.7a2.3 2.3 0 0 1 2.3 2.3v6.4a2.3 2.3 0 0 1-2.3 2.3H5.8a2.3 2.3 0 0 1-2.3-2.3V7.5Z"/>
+            <path d="m4.5 8.5 5.3 4.2a1.8 1.8 0 0 0 2.3 0l5.3-4.2"/>
+            <path d="M15.5 6.5 21 4.5l-2 5.5"/>
+            <path d="M18.7 5.4 15 9.1"/>
+          </svg>
+        </span>
+        <span>LetterBot</span>
+      </button>
+      <button class="agency-shell-nav-item" type="button" data-agency-view="sender">
+        <span class="agency-shell-nav-icon agency-shell-nav-icon-sender" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 4 10 15"/>
+            <path d="m21 4-7 17-4-6-6-4 17-7Z"/>
+          </svg>
+        </span>
+        <span>Sender</span>
+      </button>
+    </nav>
+    <div id="agencyShellWorkingLady" class="agency-shell-working-lady hidden" aria-live="polite">
+      <p>You're working in Lady</p>
+      <div class="agency-shell-working-lady-card">
+        <span id="agencyShellWorkingLadyAvatar" class="agency-shell-working-lady-avatar no-photo" aria-hidden="true">
+          <img id="agencyShellWorkingLadyPhoto" alt="">
+          <b id="agencyShellWorkingLadyInitial">L</b>
+        </span>
+        <span class="agency-shell-working-lady-copy">
+          <strong id="agencyShellWorkingLadyName">Lady</strong>
+          <small id="agencyShellWorkingLadyId">ID</small>
+        </span>
+      </div>
+    </div>
+    <div class="agency-shell-user" id="agencyShellUserMenuTrigger">
+      <div id="agencyShellAvatar" class="agency-shell-avatar">A</div>
+      <div class="agency-shell-user-copy">
+        <strong id="agencyShellUserName">Account</strong>
+        <span id="agencyShellUserRole">Agency</span>
+      </div>
+      <button id="agencyShellInlineLogoutBtn" class="agency-shell-inline-logout" type="button" title="log out" aria-label="log out">
+        <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <path d="M10 17l5-5-5-5"/>
+          <path d="M15 12H3"/>
+          <path d="M14 4h5a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-5"/>
+        </svg>
+      </button>
+      <div id="agencyShellUserMenu" class="agency-shell-user-menu hidden">
+        <button id="agencyShellLogoutBtn" type="button">
+          <span>log out</span>
+          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="M10 17l5-5-5-5"/>
+            <path d="M15 12H3"/>
+            <path d="M14 4h5a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-5"/>
+          </svg>
+        </button>
+      </div>
+    </div>
+  </aside>
+  <main class="agency-shell-main" aria-label="Agency workspace">
+    <div class="agency-home-toolbar" aria-label="Page controls">
+      <button id="agencyBackBtn" type="button" title="Back" aria-label="Back">‹</button>
+      <button id="agencyRefreshBtn" type="button" title="Refresh" aria-label="Refresh">↻</button>
+      <button id="agencyAppUpdateBtn" class="agency-app-update-btn" type="button" title="Check for updates" aria-label="Check for updates">Update</button>
+      <button id="agencyZoomOutBtn" type="button" title="Zoom out" aria-label="Zoom out">−</button>
+      <button id="agencyZoomInBtn" type="button" title="Zoom in" aria-label="Zoom in">+</button>
+    </div>
+    <section class="agency-home-panel hidden" data-agency-panel="home" aria-label="AgencyOS">
+      <div class="agency-home-logo">
+        <img src="assets/favicon-agencyos.svg" alt="" aria-hidden="true">
+        <span>Welcome to AgencyOS</span>
+      </div>
+    </section>
+    <section class="agency-account-manager" data-agency-panel="account-manager">
+      <div class="agency-account-toolbar">
+        <label class="agency-account-search">
+          <span aria-hidden="true">⌕</span>
+          <input id="agencyAccountSearch" type="search" autocomplete="off" placeholder="Search">
+          <b id="agencyAccountCount">0</b>
+        </label>
+        <div class="agency-account-tabs" role="tablist" aria-label="Account manager sections">
+          <button class="agency-account-tab active" type="button" data-agency-account-tab="ladies" role="tab" aria-selected="true">Ladies</button>
+          <button class="agency-account-tab" type="button" data-agency-account-tab="operators" role="tab" aria-selected="false">Operators</button>
+          <button id="agencyTranslatorSettingsBtn" class="agency-account-tab agency-translator-settings-btn" type="button" data-agency-account-tab="translator" role="tab" aria-selected="false">Translator</button>
+          <button id="agencySalarySettingsBtn" class="agency-account-tab agency-salary-settings-btn" type="button" data-agency-account-tab="salary" role="tab" aria-selected="false">Salary %</button>
+        </div>
+        <button id="agencyAddProfileBtn" class="agency-add-profile-btn" type="button">+ Add Profile</button>
+      </div>
+      <div id="agencyAccountStatus" class="agency-account-status"></div>
+      <div class="agency-account-table-wrap">
+        <table class="agency-account-table">
+          <thead>
+            <tr>
+              <th class="agency-col-select"><span aria-hidden="true"></span></th>
+              <th class="agency-col-number">№</th>
+              <th>Name</th>
+              <th>Profile ID</th>
+              <th class="agency-col-material">Material</th>
+              <th>Used by</th>
+              <th>Administrator</th>
+              <th>Creation Date</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="agencyAccountRows"></tbody>
+        </table>
+      </div>
+      <div id="agencySalaryPanel" class="agency-salary-panel hidden">
+        <div class="agency-salary-window">
+          <div class="agency-salary-header">
+            <div>
+              <h2 id="agencySalaryTitle">Salary Percent Grid</h2>
+              <p>Operator salary calculation settings.</p>
+            </div>
+            <button id="agencySalaryAddRowBtn" class="agency-salary-secondary" type="button">Add row</button>
+          </div>
+          <div id="agencySalaryRows" class="agency-salary-list"></div>
+          <label class="agency-salary-fee">
+            <span>Site fee from total, %</span>
+            <input id="agencySalaryFeePercentInput" type="number" min="0" max="100" step="0.1" value="5">
+          </label>
+          <div class="agency-salary-footer">
+            <div id="agencySalaryStatus" class="agency-salary-status">Set balance ranges and percent.</div>
+            <button id="agencySalarySaveBtn" class="agency-salary-primary" type="button">Save</button>
+          </div>
+        </div>
+      </div>
+      <div id="agencyTranslatorPanel" class="agency-translator-panel hidden">
+        <div class="agency-translator-window">
+          <div class="agency-translator-header">
+            <div>
+              <h2>Translator API</h2>
+              <p>Add an API key, save settings, and test translation.</p>
+            </div>
+            <button id="agencyTranslatorSaveBtn" class="agency-salary-primary" type="button">Save</button>
+          </div>
+          <div class="agency-translator-grid">
+            <label>
+              <span>Provider</span>
+              <select id="agencyTranslatorProvider">
+                <option value="deepl">DeepL</option>
+                <option value="google">Google</option>
+              </select>
+            </label>
+            <label>
+              <span>Read target</span>
+              <select id="agencyTranslatorReadTarget">
+                <option value="RU">Russian</option>
+                <option value="UK">Ukrainian</option>
+              </select>
+            </label>
+            <label>
+              <span>Reply target</span>
+              <input id="agencyTranslatorReplyTarget" type="text" value="EN" readonly tabindex="-1" aria-disabled="true">
+            </label>
+            <label class="agency-translator-key">
+              <span>API key</span>
+              <input id="agencyTranslatorApiKey" type="text" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="Paste API key">
+            </label>
+          </div>
+          <div class="agency-translator-test">
+            <label>
+              <span>Test text</span>
+              <textarea id="agencyTranslatorTestInput" rows="4" placeholder="Type text to test translation"></textarea>
+            </label>
+            <label>
+              <span>Result</span>
+              <textarea id="agencyTranslatorTestOutput" rows="4" readonly placeholder="Translation result"></textarea>
+            </label>
+          </div>
+          <div class="agency-translator-footer">
+            <div id="agencyTranslatorStatus" class="agency-salary-status">No API key saved</div>
+            <button id="agencyTranslatorTestBtn" class="agency-salary-secondary" type="button">Test Translator</button>
+          </div>
+        </div>
+      </div>
+    </section>
+    <section class="agency-inbox-panel hidden" data-agency-panel="inbox" aria-label="Inbox">
+      <div id="agencyInboxNoAccess" class="agency-inbox-no-access hidden">
+        <div class="agency-inbox-no-access-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M4 5.5h16v10.2a2.8 2.8 0 0 1-2.8 2.8H6.8A2.8 2.8 0 0 1 4 15.7V5.5Z"/>
+            <path d="M5.2 6.7 11 12a1.5 1.5 0 0 0 2 0l5.8-5.3"/>
+            <path d="M9 15h6"/>
+          </svg>
+        </div>
+        <strong>You do not have access to this section.</strong>
+        <span>Inbox is available only for administrators and operators.</span>
+        <button id="agencyInboxAuthorizeBtn" class="agency-section-authorize-btn hidden" type="button">Choose profile to authorize</button>
+      </div>
+      <iframe id="agencyInboxFrame" class="agency-inbox-frame" src="workspace.html?embedded=1&v=20260626-no-empty-letter-pages-1" title="Inbox"></iframe>
+    </section>
+    <section class="agency-favorites-panel hidden" data-agency-panel="favorites" aria-label="Favorites">
+      <div id="agencyFavoritesNoAccess" class="agency-inbox-no-access hidden">
+        <div class="agency-inbox-no-access-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="m12 3.6 2.65 5.37 5.92.86-4.29 4.18 1.01 5.9L12 17.13l-5.29 2.78 1.01-5.9-4.29-4.18 5.92-.86L12 3.6Z"/>
+          </svg>
+        </div>
+        <strong>You do not have access to this section.</strong>
+        <span>Favorites are available only for administrators and operators.</span>
+        <button id="agencyFavoritesAuthorizeBtn" class="agency-section-authorize-btn hidden" type="button">Choose profile to authorize</button>
+      </div>
+      <div id="agencyFavoritesContent" class="agency-favorites-content">
+        <div class="agency-favorites-toolbar">
+          <div id="agencyFavoritesTabs" class="agency-favorites-tabs" role="tablist" aria-label="Favorites mode">
+            <button class="agency-favorites-tab active" type="button" data-agency-favorites-tab="favorites" role="tab" aria-selected="true">Favorites</button>
+            <button class="agency-favorites-tab" type="button" data-agency-favorites-tab="chat" role="tab" aria-selected="false">Chat Favorites</button>
+          </div>
+          <label class="agency-account-search agency-favorites-search">
+            <span aria-hidden="true">⌕</span>
+            <input id="agencyFavoritesSearch" type="search" autocomplete="off" placeholder="Search">
+          </label>
+          <div id="agencyFavoritesActions" class="agency-favorites-actions">
+            <button id="agencyTopOnlineBtn" class="agency-top-online-btn" type="button" title="Top Online" aria-label="Top Online" aria-pressed="false">
+              <span></span>
+            </button>
+            <button id="agencyFavoritesUpdateTodayBtn" class="agency-favorites-action-btn" type="button">Update Today</button>
+            <button id="agencyFavoritesScanAllBtn" class="agency-favorites-action-btn" type="button">Scan All</button>
+          </div>
+          <div id="agencyChatFavoritesActions" class="agency-favorites-actions agency-chat-favorites-actions hidden">
+            <button id="agencyChatTopOnlineBtn" class="agency-top-online-btn" type="button" title="Top Online" aria-label="Top Online" aria-pressed="false">
+              <span></span>
+            </button>
+            <input id="agencyChatManIdInput" class="agency-chat-man-id-input" type="text" inputmode="numeric" placeholder="Man ID">
+            <button id="agencyChatAddManBtn" class="agency-favorites-action-btn" type="button">Add Man</button>
+          </div>
+        </div>
+        <div id="agencyFavoritesMount" class="agency-favorites-mount"></div>
+        <div id="agencyChatFavoritesMount" class="agency-favorites-mount hidden"></div>
+      </div>
+    </section>
+    <section class="agency-coming-soon-panel hidden" data-agency-panel="letterbot" aria-label="LetterBot">
+      <div class="agency-coming-soon-card">
+        <span class="agency-coming-soon-icon agency-coming-soon-icon-letterbot" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M3.5 7.5h10.7a2.3 2.3 0 0 1 2.3 2.3v6.4a2.3 2.3 0 0 1-2.3 2.3H5.8a2.3 2.3 0 0 1-2.3-2.3V7.5Z"/>
+            <path d="m4.5 8.5 5.3 4.2a1.8 1.8 0 0 0 2.3 0l5.3-4.2"/>
+            <path d="M15.5 6.5 21 4.5l-2 5.5"/>
+            <path d="M18.7 5.4 15 9.1"/>
+          </svg>
+        </span>
+        <h2>LetterBot</h2>
+        <p>Coming soon</p>
+      </div>
+    </section>
+    <section class="agency-coming-soon-panel hidden" data-agency-panel="sender" aria-label="Sender">
+      <div class="agency-coming-soon-card">
+        <span class="agency-coming-soon-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 4 10 15"/>
+            <path d="m21 4-7 17-4-6-6-4 17-7Z"/>
+          </svg>
+        </span>
+        <h2>Sender</h2>
+        <p>Coming soon</p>
+      </div>
+    </section>
+    <section class="agency-dashboard-panel hidden" data-agency-panel="dashboard" aria-label="Dashboard">
+      <div class="agency-dashboard-toolbar">
+        <select id="agencyDashboardYear" class="agency-dashboard-year" aria-label="Year"></select>
+        <div id="agencyDashboardMonths" class="agency-dashboard-months" role="tablist" aria-label="Dashboard months"></div>
+      </div>
+      <div id="agencyDashboardStatus" class="agency-dashboard-status"></div>
+      <div id="agencyDashboardList" class="agency-dashboard-list">
+        <table class="agency-dashboard-table">
+          <thead>
+            <tr>
+              <th>№</th>
+              <th>Identification</th>
+              <th>Name</th>
+              <th>Login</th>
+              <th>Source</th>
+              <th>Income</th>
+              <th>Percent</th>
+              <th>Salary</th>
+            </tr>
+          </thead>
+          <tbody id="agencyDashboardRows"></tbody>
+        </table>
+      </div>
+      <div id="agencyDashboardCalendar" class="agency-dashboard-calendar hidden">
+        <div class="agency-dashboard-calendar-controls">
+          <select id="agencyDashboardCalendarYear" class="agency-dashboard-year" aria-label="Calendar year"></select>
+          <div id="agencyDashboardCalendarMonths" class="agency-dashboard-months" role="tablist" aria-label="Calendar months"></div>
+        </div>
+        <div class="agency-dashboard-calendar-head">
+          <button id="agencyDashboardBackBtn" class="agency-dashboard-back" type="button">Back</button>
+          <div>
+            <strong id="agencyDashboardCalendarName">Operator</strong>
+            <span id="agencyDashboardCalendarLogin">Login</span>
+          </div>
+        </div>
+        <div class="agency-dashboard-calendar-shell">
+          <div>
+            <div id="agencyDashboardCalendarGrid" class="agency-dashboard-calendar-grid"></div>
+            <div class="agency-dashboard-total">
+              <span>Total Balance:</span>
+              <b id="agencyDashboardDayTotal">$0</b>
+            </div>
+          </div>
+          <div class="agency-dashboard-day-list">
+            <div class="agency-dashboard-day-list-head">
+              <strong id="agencyDashboardDayTitle">Select a day</strong>
+              <span id="agencyDashboardDayCount">0 profiles</span>
+            </div>
+            <div id="agencyDashboardProfiles"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<button id="globalThemeToggle" class="global-theme-toggle" type="button" title="Switch theme" aria-label="Switch theme" onclick="(function(btn){var dark=!document.body.classList.contains('app-dark-theme');document.body.classList.toggle('app-dark-theme',dark);try{localStorage.setItem('dream_global_theme',dark?'dark':'light')}catch(e){}btn.setAttribute('aria-label',dark?'Switch to light theme':'Switch to dark theme');btn.setAttribute('title',dark?'Switch to light theme':'Switch to dark theme');var label=btn.querySelector('.global-theme-label');if(label)label.textContent=dark?'Light':'Dark';})(this)">
+  <span class="global-theme-icon" aria-hidden="true"></span>
+  <span class="global-theme-label">Dark</span>
+</button>
+<div id="profileModal" class="profile-modal hidden">
+  <div class="profile-modal-backdrop"></div>
+  <div class="profile-modal-window">
+    <div class="profile-modal-header">
+      <div>
+        <h2 id="profileModalTitle">Man Profile</h2>
+        <div id="profileUpdatedAt" class="profile-updated"></div>
+      </div>
+      <button id="profileModalClose" type="button">&times;</button>
+    </div>
+    <div id="profileLoading" class="profile-loading">Loading current profile data...</div>
+    <div id="profileError" class="profile-error hidden"></div>
+    <div id="profileContent" class="profile-content"></div>
+  </div>
+</div>
+
+<div id="noteModal" class="note-modal hidden">
+  <div class="note-modal-backdrop"></div>
+
+  <div class="note-modal-window">
+    <div class="note-modal-header">
+      <div>
+        <div class="note-modal-title">Note</div>
+        <div id="noteModalName" class="note-modal-name"></div>
+      </div>
+      <button id="noteModalClose" class="note-modal-close" type="button">&times;</button>
+    </div>
+
+    <textarea id="noteModalText" class="note-modal-text" placeholder="Add a note..."></textarea>
+
+    <div class="note-modal-footer">
+      <button id="noteModalCancel" class="note-modal-cancel" type="button">Close</button>
+      <button id="noteModalSave" class="note-modal-save" type="button">Save</button>
+    </div>
+  </div>
+</div>
+
+<div id="profileChoiceScreen" class="profile-choice-screen hidden">
+  <div class="profile-choice-card">
+    <div class="profile-choice-brand">HNCSOS</div>
+    <h2>Choose a profile</h2>
+    <p>Select the lady you want to work with in this browser.</p>
+    <div id="profileChoiceList" class="profile-choice-list"></div>
+    <div class="profile-choice-actions">
+      <button id="profileChoiceLogout" class="profile-choice-logout" type="button">Sign out</button>
+      <button id="profileChoiceSettings" class="profile-choice-settings hidden" type="button">Settings</button>
+      <button id="profileChoiceAdminPanel" class="profile-choice-admin-panel hidden" type="button">Admin Panel</button>
+    </div>
+  </div>
+</div>
+
+<div id="ladyConnectingScreen" class="lady-connecting-screen hidden">
+  <div class="lady-connecting-card">
+    <span id="ladyConnectingPhoto" class="lady-connecting-photo"><img alt=""></span>
+    <div class="lady-connecting-spinner"></div>
+    <h2>Connecting my lady...</h2>
+    <p id="ladyConnectingName">Please wait</p>
+  </div>
+</div>
+
+<div id="accessScreen" class="activation-screen hidden">
+  <div class="activation-card">
+    <div class="login-brand"><img class="login-brand-logo" src="assets/favicon-agencyos.svg?v=20260625-auth-logo-1" alt="AgencyOS"><span class="login-brand-name">AgencyOS</span></div>
+    <h2 id="accessTitle">AgencyOS</h2>
+    <p id="accessHint">Sign in to your personal account</p>
+    <label class="login-field">
+      <span class="login-field-label">Login</span>
+      <input id="usernameInput" type="text" autocomplete="username" placeholder="Write your login">
+    </label>
+    <label class="login-field">
+      <span class="login-field-label">Password</span>
+      <input id="passwordInput" type="password" autocomplete="current-password" placeholder="Write your password">
+    </label>
+    <div class="login-actions">
+      <button id="accessBtn" type="button">Log In</button>
+    </div>
+    <p class="login-help">Have no account? Ask your admin to create a new one.</p>
+    <div id="accessStatus"></div>
+  </div>
+</div>
+
+<div id="adminModal" class="admin-modal hidden">
+  <div class="admin-backdrop"></div>
+  <div class="admin-window">
+    <div class="admin-header">
+      <button id="adminClose" class="admin-back-link" type="button">← Back to user's panel</button>
+      <div class="admin-header-title-row">
+        <h2>Settings</h2>
+        <button id="adminSignOutBtn" class="admin-sign-out-button hidden" type="button">Sign out</button>
+      </div>
+    </div>
+    <section class="admin-section">
+      <div class="admin-section-heading">
+        <h3>Active profiles</h3>
+        <button id="openAddProfileModalBtn" class="admin-add-profile-button" type="button">
+          <span class="button-icon" aria-hidden="true">+</span>
+          <span>Add Profile</span>
+        </button>
+      </div>
+      <div id="profilesAdminList" class="profiles-admin-list"></div>
+    </section>
+    <section id="directorAssignmentsSection" class="admin-section hidden">
+      <h3>My working profiles</h3>
+      <div id="directorProfileChoices" class="profile-choices"></div>
+      <button id="saveDirectorProfilesBtn" type="button">Save My Profiles</button>
+    </section>
+    <section class="admin-section team-members-section">
+      <div class="admin-section-heading">
+        <h3>Team members</h3>
+        <button id="openAddUserModalBtn" class="admin-add-user-button" type="button">
+          <span class="button-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24"><path d="M15 19c0-2.2-2.2-4-5-4s-5 1.8-5 4"/><circle cx="10" cy="8" r="3"/><path d="M18 8v6M15 11h6"/></svg>
+          </span>
+          <span>Add User</span>
+        </button>
+      </div>
+      <div id="operatorProfileChoices" class="profile-choices"></div>
+      <div id="operatorsList"></div>
+    </section>
+    <section id="operatorTranslatorSection" class="admin-section operator-translator-section hidden">
+      <div class="admin-section-heading">
+        <h3>My Translator</h3>
+        <button id="operatorTranslatorSaveBtn" class="admin-add-user-button" type="button">Save</button>
+      </div>
+      <div class="operator-translator-grid">
+        <label>
+          <span>Provider</span>
+          <select id="operatorTranslatorProvider">
+            <option value="deepl">DeepL</option>
+            <option value="google">Google</option>
+          </select>
+        </label>
+        <label>
+          <span>Read target</span>
+          <input id="operatorTranslatorReadTarget" type="hidden" value="RU">
+          <span class="translator-lang-toggle" role="group" aria-label="Read target">
+            <button class="translator-lang-option active" type="button" data-translator-target="operator" data-lang="RU">RU</button>
+            <button class="translator-lang-option" type="button" data-translator-target="operator" data-lang="UK">УК</button>
+          </span>
+        </label>
+        <label>
+          <span>Reply target</span>
+          <input id="operatorTranslatorReplyTarget" type="text" value="EN" readonly tabindex="-1" aria-disabled="true">
+        </label>
+        <label class="operator-translator-key">
+          <span>API key</span>
+          <input id="operatorTranslatorApiKey" class="translator-api-key-field" type="text" name="translator_token_operator" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="Paste API key" readonly>
+        </label>
+      </div>
+      <div id="operatorTranslatorStatus" class="operator-translator-status">No API key saved</div>
+    </section>
+    <section id="agencyAccessSection" class="admin-section agency-access-section hidden">
+      <div class="admin-section-heading">
+        <h3>Global Agency Access</h3>
+        <div class="agency-access-actions">
+          <button id="agencyAccessTestBtn" class="admin-secondary-button" type="button">Test</button>
+          <button id="agencyAccessSaveBtn" class="admin-add-user-button" type="button">Save</button>
+        </div>
+      </div>
+      <div class="agency-access-grid">
+        <label>
+          <span>Agency URL</span>
+          <input id="agencyAccessUrl" type="url" autocomplete="off" placeholder="https://agency.dream-singles.com">
+        </label>
+        <label>
+          <span>Login</span>
+          <input id="agencyAccessLogin" type="text" autocomplete="off" placeholder="Agency login">
+        </label>
+        <label>
+          <span>Password</span>
+          <input id="agencyAccessPassword" type="password" autocomplete="new-password" placeholder="Agency password">
+        </label>
+      </div>
+      <div id="agencyAccessStatus" class="operator-translator-status">Agency access is not configured</div>
+    </section>
+    <section id="salaryRatesSection" class="admin-section salary-rates-section hidden">
+      <div class="admin-section-heading">
+        <h3>Salary Percent Grid</h3>
+        <div class="agency-access-actions">
+          <button id="salaryRateAddBtn" class="admin-secondary-button" type="button">Add row</button>
+          <button id="salaryRateSaveBtn" class="admin-add-user-button" type="button">Save</button>
+        </div>
+      </div>
+      <div id="salaryRatesList" class="salary-rates-list"></div>
+      <div class="salary-fee-row">
+        <label>
+          <span>Site fee from total, %</span>
+          <input id="salaryFeePercentInput" type="number" min="0" max="100" step="0.1" value="5">
+        </label>
+      </div>
+      <div id="salaryRatesStatus" class="operator-translator-status">Set balance ranges and percent.</div>
+    </section>
+    <div id="adminStatus"></div>
+  </div>
+</div>
+
+<div id="addProfileModal" class="add-profile-modal hidden">
+  <div class="add-profile-backdrop"></div>
+  <div class="add-profile-window" role="dialog" aria-modal="true" aria-labelledby="addProfileTitle">
+    <h2 id="addProfileTitle">Add Profile</h2>
+    <p>Please, write your login and password in forms below</p>
+    <label for="newProfileId">Login</label>
+    <input id="newProfileId" type="text" autocomplete="off" placeholder="Your login here">
+    <label for="newProfileName">Password</label>
+    <input id="newProfileName" type="password" autocomplete="new-password" placeholder="Your password here">
+    <div class="add-profile-actions">
+      <button id="cancelAddProfileBtn" class="add-profile-cancel" type="button">Cancel</button>
+      <button id="addProfileBtn" class="add-profile-check" type="button">Check Profile</button>
+    </div>
+  </div>
+</div>
+
+<div id="profileSendingModal" class="add-profile-modal hidden">
+  <div class="add-profile-backdrop"></div>
+  <div class="add-profile-window profile-sending-window" role="dialog" aria-modal="true" aria-labelledby="profileSendingTitle">
+    <h2 id="profileSendingTitle">Settings</h2>
+    <p>Change Dream Singles login and password for this profile.</p>
+    <input id="profileSendingId" type="hidden">
+    <label for="profileSendingName">Profile name</label>
+    <input id="profileSendingName" type="text" autocomplete="off" placeholder="Lady name">
+    <label for="profileSendingLogin">Login</label>
+    <input id="profileSendingLogin" type="text" autocomplete="off" placeholder="Dream Singles login">
+    <label for="profileSendingPassword">Password</label>
+    <input id="profileSendingPassword" type="password" autocomplete="new-password" placeholder="Dream Singles password">
+    <label for="profileGoogleDriveUrl">Google Drive link</label>
+    <input id="profileGoogleDriveUrl" type="url" autocomplete="off" placeholder="https://drive.google.com/...">
+    <div id="profileSendingStatus" class="profile-sending-status"></div>
+    <div class="add-profile-actions profile-sending-actions">
+      <button id="cancelProfileSendingBtn" class="add-profile-cancel" type="button">Cancel</button>
+      <button id="syncProfileDreamBtn" class="add-profile-cancel" type="button">Load from Dream</button>
+      <button id="saveProfileSendingBtn" class="add-profile-check" type="button">Save</button>
+    </div>
+  </div>
+</div>
+
+<div id="addUserModal" class="add-profile-modal hidden">
+  <div class="add-profile-backdrop"></div>
+  <div class="add-profile-window" role="dialog" aria-modal="true" aria-labelledby="addUserTitle">
+    <h2 id="addUserTitle">Add User</h2>
+    <p>Create a team member and choose their access role.</p>
+    <label>Role</label>
+    <div id="newUserRoleToggle" class="role-toggle" role="group" aria-label="Role">
+      <button class="role-toggle-button active" type="button" data-role="operator">Operator</button>
+      <button class="role-toggle-button" type="button" data-role="admin">Administrator</button>
+    </div>
+    <select id="newUserRole" class="hidden" aria-hidden="true" tabindex="-1">
+      <option value="operator">Operator</option>
+      <option value="admin">Administrator</option>
+    </select>
+    <label for="newOperatorName">Name</label>
+    <input id="newOperatorName" type="text" autocomplete="off" placeholder="User name">
+    <label for="newOperatorLogin">Login</label>
+    <input id="newOperatorLogin" type="text" autocomplete="off" placeholder="Login">
+    <label for="newOperatorPassword">Password</label>
+    <input id="newOperatorPassword" type="password" autocomplete="new-password" placeholder="Password">
+    <div class="add-profile-actions">
+      <button id="cancelAddUserBtn" class="add-profile-cancel" type="button">Cancel</button>
+      <button id="addOperatorBtn" class="add-profile-check" type="button">Create User</button>
+    </div>
+  </div>
+</div>
+
+<div id="userSettingsModal" class="add-profile-modal hidden">
+  <div class="add-profile-backdrop"></div>
+  <div class="add-profile-window user-settings-window" role="dialog" aria-modal="true" aria-labelledby="userSettingsTitle">
+    <h2 id="userSettingsTitle">User Settings</h2>
+    <p>Manage user profile, login access and assigned profiles.</p>
+    <input id="userSettingsId" type="hidden">
+    <div class="user-settings-block">
+      <div class="user-settings-block-title">Profile</div>
+      <label for="editOperatorName">Name</label>
+      <input id="editOperatorName" type="text" autocomplete="off" placeholder="User name">
+      <label>Role</label>
+      <div id="editUserRoleToggle" class="role-toggle" role="group" aria-label="Role">
+        <button class="role-toggle-button active" type="button" data-role="operator">Operator</button>
+        <button class="role-toggle-button" type="button" data-role="admin">Administrator</button>
+      </div>
+      <select id="editUserRole" class="hidden" aria-hidden="true" tabindex="-1">
+        <option value="operator">Operator</option>
+        <option value="admin">Administrator</option>
+      </select>
+      <div id="editOperatorManagerBlock" class="access-field-row hidden">
+        <label for="editOperatorManager">Administrator</label>
+        <select id="editOperatorManager"></select>
+      </div>
+    </div>
+
+    <div class="user-settings-block">
+      <div class="user-settings-block-title">Login access</div>
+      <div class="login-access-grid">
+        <div class="access-field-row">
+          <label for="editOperatorLogin">Login</label>
+          <div class="access-field-control">
+            <input id="editOperatorLogin" type="text" autocomplete="off" placeholder="Operator login">
+            <button id="saveUserLoginBtn" class="access-action-button" type="button">Save</button>
+          </div>
+        </div>
+        <div class="access-field-row">
+          <label for="editOperatorPassword">Password</label>
+          <div class="access-field-control">
+            <input id="editOperatorPassword" type="password" autocomplete="new-password" placeholder="New password">
+            <button id="saveResetPasswordBtn" class="access-action-button" type="button">Save</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="editOperatorAgencyBlock" class="user-settings-block operator-agency-settings-block">
+      <div class="user-settings-block-title">Agency Access</div>
+      <div class="operator-agency-grid">
+        <div class="access-field-row">
+          <label for="editOperatorAgencyUrl">Agency URL</label>
+          <input id="editOperatorAgencyUrl" type="url" autocomplete="off" placeholder="https://agency.dream-singles.com">
+        </div>
+        <div class="access-field-row">
+          <label for="editOperatorAgencyLogin">Login</label>
+          <input id="editOperatorAgencyLogin" type="text" autocomplete="off" placeholder="Agency login">
+        </div>
+        <div class="access-field-row">
+          <label for="editOperatorAgencyPassword">Password</label>
+          <input id="editOperatorAgencyPassword" type="password" autocomplete="new-password" placeholder="Agency password">
+        </div>
+      </div>
+      <div id="editOperatorAgencyStatus" class="operator-translator-status">Agency access is not configured</div>
+      <div class="operator-agency-actions">
+        <button id="editOperatorAgencyTestBtn" class="admin-secondary-button" type="button">Test</button>
+      </div>
+    </div>
+
+    <div class="add-profile-actions user-settings-actions">
+      <button id="saveUserSettingsBtn" class="add-profile-check" type="button">Save</button>
+    </div>
+  </div>
+</div>
+
+<div id="deleteUserConfirmModal" class="confirm-mini-modal hidden">
+  <div class="confirm-mini-backdrop"></div>
+  <div class="confirm-mini-window" role="dialog" aria-modal="true" aria-labelledby="deleteUserConfirmTitle">
+    <h2 id="deleteUserConfirmTitle">Delete user?</h2>
+    <p>Are you sure you want to delete this user?</p>
+    <div class="confirm-mini-actions">
+      <button id="cancelDeleteUserBtn" class="confirm-cancel-button" type="button">NO</button>
+      <button id="confirmDeleteUserBtn" class="confirm-danger-button" type="button">YES</button>
+    </div>
+  </div>
+</div>
+
+<div id="deleteProfileConfirmModal" class="confirm-mini-modal hidden">
+  <div class="confirm-mini-backdrop"></div>
+  <div class="confirm-mini-window" role="dialog" aria-modal="true" aria-labelledby="deleteProfileConfirmTitle">
+    <h2 id="deleteProfileConfirmTitle">Delete profile?</h2>
+    <p>Are you sure you want to delete this profile?</p>
+    <div class="confirm-mini-actions">
+      <button id="cancelDeleteProfileBtn" class="confirm-cancel-button" type="button">NO</button>
+      <button id="confirmDeleteProfileBtn" class="confirm-danger-button" type="button">YES</button>
+    </div>
+  </div>
+</div>
+
+<div id="saveUserConfirmModal" class="confirm-mini-modal hidden">
+  <div class="confirm-mini-backdrop"></div>
+  <div class="confirm-mini-window" role="dialog" aria-modal="true" aria-labelledby="saveUserConfirmTitle">
+    <h2 id="saveUserConfirmTitle">Save changes?</h2>
+    <p>Are you sure you want to save these changes?</p>
+    <div class="confirm-mini-actions">
+      <button id="cancelSaveUserConfirmBtn" class="confirm-cancel-button" type="button">NO</button>
+      <button id="confirmSaveUserBtn" class="confirm-danger-button" type="button">YES</button>
+    </div>
+  </div>
+</div>
+
+<div id="syncConfirmModal" class="confirm-mini-modal hidden">
+  <div class="confirm-mini-backdrop"></div>
+  <div class="confirm-mini-window" role="dialog" aria-modal="true" aria-labelledby="syncConfirmTitle">
+    <h2 id="syncConfirmTitle">Start update?</h2>
+    <p id="syncConfirmText">Are you sure you want to start this action?</p>
+    <div class="confirm-mini-actions">
+      <button id="cancelSyncConfirmBtn" class="confirm-cancel-button" type="button">NO</button>
+      <button id="confirmSyncBtn" class="confirm-danger-button" type="button">YES</button>
+    </div>
+  </div>
+</div>
+  <script src="app.js?v=20260626-app-update-1"></script>
+</body>
+</html>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

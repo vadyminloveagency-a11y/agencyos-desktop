@@ -1,0 +1,160 @@
+﻿<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Inbox</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@800;900&display=swap" rel="stylesheet">
+  <link rel="icon" type="image/svg+xml" href="assets/inbox-favicon.svg?v=20260621-mail">
+  <link rel="stylesheet" href="workspace.css?v=20260626-dreamauto-media-20">
+</head>
+<body>
+  <div class="workspace-shell">
+    <aside class="workspace-list">
+      <div class="workspace-control-panel">
+        <div class="workspace-brand">
+          <span id="workspaceProfileAvatar" class="workspace-profile-avatar"></span>
+          <div>
+            <strong id="workspaceProfileName">Profile</strong>
+            <span id="workspaceProfileLabel">ID</span>
+          </div>
+          <button id="workspaceTopOnlineBtn" class="workspace-profile-top-online" type="button" aria-pressed="false">Online</button>
+          <button id="workspaceRefreshBtn" class="workspace-profile-sync" type="button">Update</button>
+          <button id="workspaceConnectionToggle" class="workspace-connection-toggle" type="button" aria-pressed="true" title="Disconnect" hidden>ON</button>
+        </div>
+        <div id="workspaceSyncStatus" class="workspace-sync-status" hidden></div>
+
+        <div class="workspace-list-toolbar">
+          <button id="workspaceInboxFilterBtn" class="workspace-list-filter active" type="button" data-list-filter="inbox">Inbox</button>
+          <button id="workspaceReadFilterBtn" class="workspace-list-filter" type="button" data-list-filter="read">Read</button>
+          <button id="workspaceNoReplyFilterBtn" class="workspace-list-filter" type="button" data-list-filter="noreply">No Reply</button>
+          <button id="workspaceOnlyOnlineBtn" class="workspace-online-filter" type="button" aria-pressed="false">Only Online</button>
+        </div>
+
+        <div class="workspace-search-row">
+          <input class="workspace-autofill-trap" type="text" name="username" autocomplete="username" tabindex="-1" aria-hidden="true">
+          <input class="workspace-autofill-trap" type="password" name="password" autocomplete="current-password" tabindex="-1" aria-hidden="true">
+          <div class="workspace-search">
+            <input id="workspaceSearch" type="search" name="workspace_person_filter" placeholder="Search By Name Or ID..." autocomplete="new-password" autocorrect="off" autocapitalize="off" spellcheck="false" readonly>
+          </div>
+          <button id="workspaceCopyReadIdsBtn" class="workspace-copy-read-ids hidden" type="button" title="Copy Read IDs" aria-label="Copy Read IDs">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <rect x="9" y="9" width="10" height="10" rx="2"></rect>
+              <path d="M5 15V7a2 2 0 0 1 2-2h8"></path>
+            </svg>
+          </button>
+          <button class="workspace-search-button" type="button" aria-label="Search">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <circle cx="11" cy="11" r="7"></circle>
+              <path d="m16.5 16.5 4 4"></path>
+            </svg>
+          </button>
+        </div>
+        <div id="workspaceInboxLoading" class="workspace-inbox-loading" aria-label="Loading" hidden><span></span><span></span><span></span></div>
+      </div>
+
+      <div id="workspaceHint" class="workspace-hint">Letters Found: 0</div>
+      <div id="workspaceMenList" class="workspace-men-list"></div>
+    </aside>
+
+    <main class="workspace-main">
+      <header class="workspace-main-header">
+        <div id="workspaceHeaderTitle" class="workspace-title">
+          <span>INBOX DREAM-SINGLES</span>
+        </div>
+        <div id="workspaceHeaderDialog" class="workspace-header-dialog hidden"></div>
+        <div id="workspaceHeaderLetters" class="workspace-header-letters hidden"></div>
+      </header>
+
+      <section id="workspaceDialog" class="workspace-dialog">
+        <div class="workspace-empty-layout">
+          <div class="workspace-empty-main">
+            <div class="workspace-loading-state" aria-live="polite">
+              <span class="workspace-spinner"></span>
+              <strong>Loading Inbox</strong>
+              <span>Preparing Your Workspace...</span>
+            </div>
+          </div>
+          <aside class="workspace-empty-side" aria-hidden="true"></aside>
+        </div>
+      </section>
+
+      <footer class="workspace-composer hidden">
+        <div class="workspace-reply-box">
+          <textarea id="workspaceReply" placeholder="Enter your message" disabled></textarea>
+          <span id="workspaceReplyCount" class="workspace-reply-count">0</span>
+        </div>
+        <div class="composer-media-actions">
+          <button id="workspaceReplyTranslateBtn" class="composer-media workspace-reply-translate" type="button" disabled title="Translate to English" aria-label="Translate to English">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M4 5h9"></path>
+              <path d="M8.5 3v2"></path>
+              <path d="M11.5 5c-.7 2.8-2.3 5.2-5.6 7.2"></path>
+              <path d="M6 8.5c1.1 1.6 2.5 2.9 4.4 3.9"></path>
+              <path d="M14 21l4-10 4 10"></path>
+              <path d="M15.4 17.5h5.2"></path>
+            </svg>
+          </button>
+          <button id="workspacePhotoBtn" class="composer-media" type="button" disabled>Photo</button>
+          <button id="workspaceVideoBtn" class="composer-media" type="button" disabled>Video</button>
+        </div>
+        <button id="workspaceSendBtn" class="composer-send" type="button" disabled title="Send" aria-label="Send"></button>
+        <div id="workspaceAttachmentQueue" class="workspace-reply-attachments hidden"></div>
+      </footer>
+    </main>
+  </div>
+  <button id="workspaceThemeToggle" class="workspace-theme-toggle" type="button" title="Switch theme" aria-label="Switch theme">
+    <span class="workspace-theme-icon" aria-hidden="true"></span>
+  </button>
+  <div id="workspaceTranslatorModal" class="workspace-translator-modal hidden" aria-hidden="true">
+    <div class="workspace-translator-panel" role="dialog" aria-modal="true" aria-label="Translator settings">
+      <div class="workspace-translator-head">
+        <h2>Translator</h2>
+        <button id="workspaceTranslatorClose" type="button" aria-label="Close">Г—</button>
+      </div>
+      <label>
+        <span>Provider</span>
+        <select id="workspaceTranslatorProvider">
+          <option value="deepl">DeepL</option>
+          <option value="google">Google Translate</option>
+        </select>
+      </label>
+      <label>
+        <span>Read target</span>
+        <input id="workspaceTranslatorTarget" type="text" value="RU" maxlength="8">
+      </label>
+      <label>
+        <span>API key</span>
+        <input id="workspaceTranslatorApiKey" type="password" autocomplete="off" placeholder="Paste API key">
+      </label>
+      <div id="workspaceTranslatorState" class="workspace-translator-state">No API key saved</div>
+      <div class="workspace-translator-actions">
+        <button id="workspaceTranslatorTest" type="button">Test</button>
+        <button id="workspaceTranslatorSave" type="button">Save</button>
+      </div>
+    </div>
+  </div>
+  <div id="workspaceMediaModal" class="workspace-media-modal hidden" aria-hidden="true">
+    <div class="workspace-media-panel" role="dialog" aria-modal="true" aria-label="Choose media">
+      <div class="workspace-media-head">
+        <h2 id="workspaceMediaTitle">Choose Photo</h2>
+        <div class="workspace-media-actions">
+          <button id="workspaceMediaRefresh" type="button">Refresh Photos</button>
+          <button id="workspaceMediaSelect" type="button">Select</button>
+          <button id="workspaceMediaClose" class="ghost" type="button" aria-label="Close media picker" title="Close">&times;</button>
+        </div>
+      </div>
+      <div id="workspaceMediaSections" class="workspace-media-sections" role="tablist" aria-label="Media folders"></div>
+      <div id="workspaceMediaSummary" class="workspace-media-summary"></div>
+      <div class="workspace-media-toolbar">
+        <span id="workspaceMediaCount">Loading...</span>
+        <div id="workspaceMediaPager" class="workspace-media-pager"></div>
+      </div>
+      <div id="workspaceMediaGrid" class="workspace-media-grid"></div>
+    </div>
+  </div>
+  <script src="workspace.js?v=20260626-dreamauto-media-20"></script>
+</body>
+</html>
