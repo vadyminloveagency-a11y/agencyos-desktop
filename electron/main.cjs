@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, session, shell } = require('electron');
+const { app, BrowserWindow, Menu, ipcMain, session, shell } = require('electron');
 const fs = require('fs');
 const path = require('path');
 const net = require('net');
@@ -197,6 +197,7 @@ function createMainWindow(baseUrl) {
     }
   });
 
+  mainWindow.setMenu(null);
   mainWindow.webContents.session.clearCache().catch(() => {});
   mainWindow.loadURL(startupUrl);
   const sendMainHome = () => {
@@ -515,6 +516,7 @@ ipcMain.handle('agency:open-dream-window', async (_event, payload = {}) => {
     });
     dreamWindows.add(win);
     dreamWindowByProfile.set(profileId, win);
+    win.setMenu(null);
     win.on('closed', () => {
       dreamWindows.delete(win);
       if (dreamWindowByProfile.get(profileId) === win) dreamWindowByProfile.delete(profileId);
@@ -626,6 +628,7 @@ ipcMain.handle('agency:logout-dream-profile', async (_event, payload = {}) => {
 
 app.whenReady().then(async () => {
   try {
+    Menu.setApplicationMenu(null);
     mainBaseUrl = await resolveMainBaseUrl();
     createMainWindow(mainBaseUrl);
   } catch (error) {
