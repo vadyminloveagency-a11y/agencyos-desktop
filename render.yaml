@@ -1,0 +1,23 @@
+services:
+  - type: web
+    name: dream-team-crm
+    env: node
+    plan: starter
+    buildCommand: npm ci
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DREAM_TEAM_DATA_DIR
+        value: /var/data
+      - key: DREAM_TEAM_PHOTOS_DIR
+        value: /var/data/photos
+      - key: DREAM_TEAM_WORKSPACE_ATTACHMENTS_DIR
+        value: /var/data/workspace-attachments
+      - key: DREAM_TEAM_CREDENTIAL_KEY
+        generateValue: true
+    disk:
+      name: dream-team-data
+      mountPath: /var/data
+      sizeGB: 1

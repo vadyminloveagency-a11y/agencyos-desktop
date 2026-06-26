@@ -1,6 +1,6 @@
 {
   "name": "dream-local-crm",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "repository": {
     "type": "git",
@@ -33,7 +33,7 @@
   "build": {
     "appId": "com.agencyos.dreamlocalcrm",
     "productName": "AgencyOS",
-    "copyright": "Copyright © 2026 AgencyOS",
+    "copyright": "Copyright (c) 2026 AgencyOS",
     "directories": {
       "output": "dist"
     },

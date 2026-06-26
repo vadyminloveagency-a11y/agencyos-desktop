@@ -6,12 +6,27 @@ const { pathToFileURL } = require('url');
 
 let mainWindow = null;
 let serverPort = 0;
+let mainBaseUrl = '';
 const dreamWindows = new Set();
 const dreamWindowByProfile = new Map();
 const hiddenWindows = new Set();
 const preparedDreamProfileIds = new Set();
 let logPath = '';
 let dreamLogoutBeforeQuitDone = false;
+const DEFAULT_REMOTE_SERVER_URL = 'https://dream-team-crm.onrender.com';
+
+function normalizeServerUrl(value = '') {
+  const text = String(value || '').trim().replace(/\/+$/, '');
+  if (!/^https?:\/\//i.test(text)) return '';
+  return text;
+}
+
+function configuredRemoteServerUrl() {
+  const envUrl = normalizeServerUrl(process.env.AGENCYOS_SERVER_URL || process.env.DREAM_TEAM_REMOTE_URL || '');
+  if (envUrl) return envUrl;
+  if (app.isPackaged || process.env.AGENCYOS_USE_REMOTE === '1') return DEFAULT_REMOTE_SERVER_URL;
+  return '';
+}
 
 function packageInfo() {
   try {
@@ -144,6 +159,21 @@ async function startLocalServer() {
   const baseUrl = `http://127.0.0.1:${serverPort}`;
   await waitForServer(baseUrl);
   return baseUrl;
+}
+
+async function resolveMainBaseUrl() {
+  logPath = path.join(app.getPath('userData'), 'agencyos-electron.log');
+  logElectronInfo('log-file', logPath);
+  const remoteUrl = configuredRemoteServerUrl();
+  if (remoteUrl) {
+    logElectronInfo('remote-server-mode', remoteUrl);
+    await waitForServer(remoteUrl, 90_000).catch(error => {
+      logElectronError('remote-server-health', error);
+    });
+    return remoteUrl;
+  }
+  logElectronInfo('local-server-mode');
+  return startLocalServer();
 }
 
 function createMainWindow(baseUrl) {
@@ -596,8 +626,8 @@ ipcMain.handle('agency:logout-dream-profile', async (_event, payload = {}) => {
 
 app.whenReady().then(async () => {
   try {
-    const baseUrl = await startLocalServer();
-    createMainWindow(baseUrl);
+    mainBaseUrl = await resolveMainBaseUrl();
+    createMainWindow(mainBaseUrl);
   } catch (error) {
     logElectronError('startup', error);
     app.quit();
@@ -626,5 +656,5 @@ app.on('window-all-closed', () => {
 });
 
 app.on('activate', () => {
-  if (!mainWindow && serverPort) createMainWindow(`http://127.0.0.1:${serverPort}`);
+  if (!mainWindow && mainBaseUrl) createMainWindow(mainBaseUrl);
 });
