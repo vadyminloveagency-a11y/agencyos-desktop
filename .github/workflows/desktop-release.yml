@@ -44,3 +44,4 @@ jobs:
           files: |
             dist/AgencyOS-Setup-*.exe
             dist/AgencyOS-Setup-*.exe.blockmap
+            dist/latest*.yml

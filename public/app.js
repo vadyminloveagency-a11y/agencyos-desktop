@@ -6148,9 +6148,24 @@ agencyAppUpdateBtn?.addEventListener('click', async () => {
       alert(result.message || 'No updates available.');
       return;
     }
-    const shouldDownload = confirm(`${result.message || `Update available: v${result.latestVersion}.`}\n\nCurrent version: v${result.currentVersion}\n\nDownload now?`);
-    if (shouldDownload && result.downloadUrl) {
-      await window.agencyElectron.openExternalUrl(result.downloadUrl);
+    const shouldInstall = confirm(`${result.message || `Update available: v${result.latestVersion}.`}\n\nCurrent version: v${result.currentVersion}\n\nInstall now?`);
+    if (shouldInstall) {
+      if (!window.agencyElectron?.installUpdate) {
+        alert('This version can only open the download page. Install the latest version once to enable automatic updates.');
+        if (result.downloadUrl) await window.agencyElectron.openExternalUrl(result.downloadUrl);
+        return;
+      }
+      agencyAppUpdateBtn.textContent = 'Downloading...';
+      const installResult = await window.agencyElectron.installUpdate();
+      if (!installResult?.ok) {
+        alert(installResult?.error || 'Could not install update.');
+        return;
+      }
+      if (installResult.hasUpdate === false) {
+        alert(installResult.message || 'No updates available.');
+        return;
+      }
+      agencyAppUpdateBtn.textContent = 'Installing...';
     }
   } catch (error) {
     alert(error?.message || 'Could not check for updates.');

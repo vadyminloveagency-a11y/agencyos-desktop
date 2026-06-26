@@ -1,4 +1,5 @@
 const { app, BrowserWindow, Menu, ipcMain, session, shell } = require('electron');
+const { autoUpdater } = require('electron-updater');
 const fs = require('fs');
 const path = require('path');
 const net = require('net');
@@ -13,6 +14,8 @@ const hiddenWindows = new Set();
 const preparedDreamProfileIds = new Set();
 let logPath = '';
 let dreamLogoutBeforeQuitDone = false;
+let autoUpdaterConfigured = false;
+let updateInstallInProgress = false;
 const DEFAULT_REMOTE_SERVER_URL = 'https://agencyos-server-096a.onrender.com';
 
 function normalizeServerUrl(value = '') {
@@ -68,6 +71,22 @@ function compareVersions(a = '', b = '') {
     if (diff) return diff > 0 ? 1 : -1;
   }
   return 0;
+}
+
+function configureAutoUpdater() {
+  if (autoUpdaterConfigured) return { ok: true };
+  const repo = resolveUpdateRepository();
+  const match = repo.match(/^([^/]+)\/([^/]+)$/);
+  if (!match) return { ok: false, repo: '', message: 'Update channel is not configured yet.' };
+  autoUpdater.autoDownload = false;
+  autoUpdater.autoInstallOnAppQuit = false;
+  autoUpdater.setFeedURL({ provider: 'github', owner: match[1], repo: match[2] });
+  autoUpdater.on('error', error => logElectronError('auto-updater', error));
+  autoUpdater.on('download-progress', progress => {
+    logElectronInfo('auto-updater-download', `${Math.round(progress.percent || 0)}%`);
+  });
+  autoUpdaterConfigured = true;
+  return { ok: true, repo };
 }
 
 async function fetchJson(url) {
@@ -566,6 +585,15 @@ ipcMain.handle('agency:check-for-updates', async () => {
         message: 'Update channel is not configured yet.'
       };
     }
+    const updaterConfig = configureAutoUpdater();
+    if (!updaterConfig.ok) {
+      return {
+        ok: true,
+        configured: false,
+        currentVersion,
+        message: updaterConfig.message || 'Update channel is not configured yet.'
+      };
+    }
     const latest = await fetchJson(`https://api.github.com/repos/${repo}/releases/latest`);
     const latestVersion = normalizeVersion(latest.tag_name || latest.name || '');
     if (!latestVersion) throw new Error('Latest release does not have a version tag.');
@@ -587,6 +615,34 @@ ipcMain.handle('agency:check-for-updates', async () => {
   } catch (error) {
     logElectronError('check-for-updates', error);
     return { ok: false, error: error.message || 'Could not check for updates.' };
+  }
+});
+
+ipcMain.handle('agency:install-update', async () => {
+  try {
+    if (updateInstallInProgress) {
+      return { ok: false, error: 'Update installation is already running.' };
+    }
+    const currentVersion = app.getVersion() || packageInfo().version || '0.0.0';
+    const updaterConfig = configureAutoUpdater();
+    if (!updaterConfig.ok) {
+      return { ok: false, error: updaterConfig.message || 'Update channel is not configured yet.' };
+    }
+    updateInstallInProgress = true;
+    const result = await autoUpdater.checkForUpdates();
+    const latestVersion = normalizeVersion(result?.updateInfo?.version || '');
+    if (!latestVersion || compareVersions(latestVersion, currentVersion) <= 0) {
+      updateInstallInProgress = false;
+      return { ok: true, hasUpdate: false, currentVersion, latestVersion: latestVersion || currentVersion, message: 'No updates available.' };
+    }
+    await autoUpdater.downloadUpdate();
+    dreamLogoutBeforeQuitDone = true;
+    setImmediate(() => autoUpdater.quitAndInstall(false, true));
+    return { ok: true, hasUpdate: true, currentVersion, latestVersion, message: `Installing update v${latestVersion}...` };
+  } catch (error) {
+    updateInstallInProgress = false;
+    logElectronError('install-update', error);
+    return { ok: false, error: error.message || 'Could not install update.' };
   }
 });
 
