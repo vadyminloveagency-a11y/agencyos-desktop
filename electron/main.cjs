@@ -13,7 +13,7 @@ const hiddenWindows = new Set();
 const preparedDreamProfileIds = new Set();
 let logPath = '';
 let dreamLogoutBeforeQuitDone = false;
-const DEFAULT_REMOTE_SERVER_URL = 'https://dream-team-crm.onrender.com';
+const DEFAULT_REMOTE_SERVER_URL = 'https://agencyos-server-096a.onrender.com';
 
 function normalizeServerUrl(value = '') {
   const text = String(value || '').trim().replace(/\/+$/, '');
