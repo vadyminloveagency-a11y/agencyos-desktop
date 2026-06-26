@@ -2,6 +2,11 @@
   "name": "dream-local-crm",
   "version": "0.1.0",
   "private": true,
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/vadyminloveagency-a11y/agencyos-desktop.git"
+  },
+  "homepage": "https://github.com/vadyminloveagency-a11y/agencyos-desktop",
   "main": "electron/main.cjs",
   "type": "module",
   "engines": {
