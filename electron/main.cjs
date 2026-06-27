@@ -11,6 +11,7 @@ let mainBaseUrl = '';
 const dreamWindows = new Set();
 const dreamWindowByProfile = new Map();
 const hiddenWindows = new Set();
+const dreamKeepAliveByProfile = new Map();
 const preparedDreamProfileIds = new Set();
 let logPath = '';
 let dreamLogoutBeforeQuitDone = false;
@@ -123,6 +124,7 @@ function dreamPartitionForProfile(profileId) {
 function knownDreamProfileIds() {
   const ids = new Set(preparedDreamProfileIds);
   for (const id of dreamWindowByProfile.keys()) ids.add(String(id || ''));
+  for (const id of dreamKeepAliveByProfile.keys()) ids.add(String(id || ''));
   try {
     const dbPath = path.join(__dirname, '..', 'data.json');
     const db = JSON.parse(fs.readFileSync(dbPath, 'utf8'));
@@ -424,6 +426,64 @@ async function isDreamLoggedIn(partition) {
   }
 }
 
+async function ensureDreamKeepAlive(profileId, partition) {
+  const id = String(profileId || '').trim();
+  if (!id) return false;
+  const existing = dreamKeepAliveByProfile.get(id);
+  if (existing?.win && !existing.win.isDestroyed()) {
+    logElectronInfo('dream-keepalive-reuse', id);
+    await loadUrlLoose(existing.win, 'https://www.dream-singles.com/members/messaging/inbox').catch(error => {
+      logElectronError(`dream-keepalive-reload ${id}`, error);
+    });
+    return true;
+  }
+
+  logElectronInfo('dream-keepalive-start', id);
+  const win = new BrowserWindow({
+    width: 1180,
+    height: 820,
+    show: false,
+    skipTaskbar: true,
+    webPreferences: {
+      partition,
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true
+    }
+  });
+  hiddenWindows.add(win);
+  const keepAlive = {
+    win,
+    timer: null
+  };
+  dreamKeepAliveByProfile.set(id, keepAlive);
+  win.on('closed', () => {
+    hiddenWindows.delete(win);
+    if (keepAlive.timer) clearInterval(keepAlive.timer);
+    if (dreamKeepAliveByProfile.get(id) === keepAlive) dreamKeepAliveByProfile.delete(id);
+    logElectronInfo('dream-keepalive-closed', id);
+  });
+  await loadUrlLoose(win, 'https://www.dream-singles.com/members/messaging/inbox').catch(error => {
+    logElectronError(`dream-keepalive-load ${id}`, error);
+  });
+  keepAlive.timer = setInterval(() => {
+    if (win.isDestroyed()) return;
+    loadUrlLoose(win, 'https://www.dream-singles.com/members/messaging/inbox').catch(error => {
+      logElectronError(`dream-keepalive-pulse ${id}`, error);
+    });
+  }, 60000);
+  return true;
+}
+
+function closeDreamKeepAlive(profileId) {
+  const id = String(profileId || '').trim();
+  const keepAlive = dreamKeepAliveByProfile.get(id);
+  if (!keepAlive) return;
+  if (keepAlive.timer) clearInterval(keepAlive.timer);
+  dreamKeepAliveByProfile.delete(id);
+  if (keepAlive.win && !keepAlive.win.isDestroyed()) keepAlive.win.close();
+}
+
 async function hasDreamSessionCookie(profileId) {
   const partition = dreamPartitionForProfile(profileId);
   const dreamSession = session.fromPartition(partition);
@@ -434,6 +494,7 @@ async function hasDreamSessionCookie(profileId) {
 async function logoutDreamProfile(profileId, options = {}) {
   const id = String(profileId || '').trim();
   if (!id) return { ok: false, error: 'Profile is not selected' };
+  closeDreamKeepAlive(id);
   const partition = dreamPartitionForProfile(id);
   const label = options.reason ? `${id} ${options.reason}` : id;
   logElectronInfo('logout-dream-profile-start', label);
@@ -664,6 +725,7 @@ ipcMain.handle('agency:prepare-dream-profile', async (_event, payload = {}) => {
     const launch = await redeemLaunch(baseUrl, token);
     const { partition } = await seedDreamCookies(profileId, launch.dreamCookies || []);
     const loggedIn = await ensureDreamLoggedIn(partition, launch);
+    if (loggedIn) await ensureDreamKeepAlive(profileId, partition);
     logElectronInfo('prepare-dream-profile-result', `${profileId} ${loggedIn}`);
     return { ok: loggedIn, profileId };
   } catch (error) {
