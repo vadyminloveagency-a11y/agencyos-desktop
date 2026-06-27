@@ -252,6 +252,7 @@ function createMainWindow(baseUrl) {
       preload: path.join(__dirname, 'preload.cjs'),
       contextIsolation: true,
       nodeIntegration: false,
+      webviewTag: true,
       sandbox: false
     }
   });

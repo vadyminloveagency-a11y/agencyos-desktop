@@ -105,6 +105,10 @@ const historyModal = document.getElementById('workspaceHistoryModal');
 const historyClose = document.getElementById('workspaceHistoryClose');
 const historyBody = document.getElementById('workspaceHistoryBody');
 const historyMeta = document.getElementById('workspaceHistoryMeta');
+const dreamModal = document.getElementById('workspaceDreamModal');
+const dreamFrame = document.getElementById('workspaceDreamFrame');
+const dreamClose = document.getElementById('workspaceDreamClose');
+const dreamExternal = document.getElementById('workspaceDreamExternal');
 const inboxFilterBtn = document.getElementById('workspaceInboxFilterBtn');
 const readFilterBtn = document.getElementById('workspaceReadFilterBtn');
 const copyReadIdsBtn = document.getElementById('workspaceCopyReadIdsBtn');
@@ -392,11 +396,111 @@ function isWorkspaceLadyConnected() {
 async function openWorkspaceDreamUrl(url) {
   const targetUrl = String(url || '').trim();
   if (!targetUrl) return;
+  if (window.agencyElectron?.openDreamUrl && activeProfileId) {
+    const result = await window.agencyElectron.openDreamUrl(activeProfileId, targetUrl);
+    if (result?.ok === false) throw new Error(result.error || 'Could not open Dream window');
+    return;
+  }
   if (workspaceEmbedded) {
     await extensionCommand('OPEN_DREAM_URL', { url: targetUrl }, 45000);
     return;
   }
   window.open(targetUrl, '_blank', 'noopener');
+}
+
+let workspaceDreamPanelUrl = '';
+
+function dreamPartitionForWorkspaceProfile(profileId = activeProfileId) {
+  return `persist:dream-profile-${String(profileId || '').replace(/[^\w.-]/g, '_')}`;
+}
+
+function isWorkspaceDesktopShell() {
+  return Boolean(window.agencyElectron?.isElectron || window.agencyElectron?.openDreamUrl || /\bElectron\b/i.test(navigator.userAgent || ''));
+}
+
+function closeWorkspaceDreamPanel() {
+  workspaceDreamPanelUrl = '';
+  if (dreamFrame) dreamFrame.innerHTML = '<div class="workspace-dream-state">Opening Dream letter...</div>';
+  if (dreamModal) {
+    dreamModal.classList.add('hidden');
+    dreamModal.setAttribute('aria-hidden', 'true');
+  }
+}
+
+async function openWorkspaceDreamPanel(url) {
+  const targetUrl = String(url || '').trim();
+  if (!targetUrl) return;
+  if (!dreamModal || !dreamFrame || !isWorkspaceDesktopShell()) {
+    await openWorkspaceDreamUrl(targetUrl);
+    return;
+  }
+  workspaceDreamPanelUrl = targetUrl;
+  dreamModal.classList.remove('hidden');
+  dreamModal.setAttribute('aria-hidden', 'false');
+  dreamFrame.innerHTML = '<div class="workspace-dream-state">Opening Dream letter...</div>';
+
+  const view = document.createElement('webview');
+  view.className = 'workspace-dream-webview';
+  view.setAttribute('partition', dreamPartitionForWorkspaceProfile());
+  view.setAttribute('allowpopups', '');
+  view.setAttribute('src', targetUrl);
+  view.addEventListener('did-start-loading', () => {
+    dreamFrame.classList.add('loading');
+  });
+  view.addEventListener('did-stop-loading', () => {
+    dreamFrame.classList.remove('loading');
+  });
+  view.addEventListener('did-fail-load', event => {
+    if (event.errorCode === -3) return;
+    dreamFrame.innerHTML = `<div class="workspace-dream-state error">Could not open Dream letter<br><button type="button" data-dream-open-external="${escapeAttr(targetUrl)}">Open Window</button></div>`;
+  });
+  dreamFrame.innerHTML = '';
+  dreamFrame.appendChild(view);
+}
+
+let workspaceDreamInlineSyncFrame = 0;
+
+function hideWorkspaceDreamInlinePortal() {
+  if (!workspaceEmbedded) return;
+  window.parent.postMessage({
+    type: 'DREAM_CRM_WORKSPACE_COMMAND',
+    requestId: `inline-hide-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+    command: 'HIDE_DREAM_INLINE',
+    payload: {}
+  }, '*');
+}
+
+function syncWorkspaceDreamInlinePortal() {
+  if (!workspaceEmbedded) return;
+  if (workspaceDreamInlineSyncFrame) cancelAnimationFrame(workspaceDreamInlineSyncFrame);
+  workspaceDreamInlineSyncFrame = requestAnimationFrame(() => {
+    workspaceDreamInlineSyncFrame = 0;
+    const host = dialog?.querySelector?.('.workspace-inline-dream-portal[data-dream-inline-url]');
+    if (!host) {
+      hideWorkspaceDreamInlinePortal();
+      return;
+    }
+    const rect = host.getBoundingClientRect();
+    if (!rect.width || !rect.height) {
+      hideWorkspaceDreamInlinePortal();
+      return;
+    }
+    window.parent.postMessage({
+      type: 'DREAM_CRM_WORKSPACE_COMMAND',
+      requestId: `inline-show-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      command: 'SHOW_DREAM_INLINE',
+      payload: {
+        url: host.dataset.dreamInlineUrl || '',
+        partition: host.dataset.dreamInlinePartition || dreamPartitionForWorkspaceProfile(),
+        rect: {
+          left: rect.left,
+          top: rect.top,
+          width: rect.width,
+          height: rect.height
+        }
+      }
+    }, '*');
+  });
 }
 
 function updateWorkspaceConnectionToggle(connected = isWorkspaceLadyConnected(), busy = false) {
@@ -1327,6 +1431,7 @@ async function copyReadIds(button = copyReadIdsBtn) {
 }
 
 function renderEmpty() {
+  hideWorkspaceDreamInlinePortal();
   clearHeaderDialog();
   dialog.innerHTML = `
     <div class="workspace-empty-layout">
@@ -1351,6 +1456,7 @@ function renderEmpty() {
 }
 
 function renderDisconnectedWorkspace() {
+  hideWorkspaceDreamInlinePortal();
   workspaceLetters = [];
   workspaceSelectedId = '';
   workspaceSelectedLetterKey = '';
@@ -1655,8 +1761,7 @@ function historyLetterCandidatesForGroup(group) {
 function historyLetterForGroup(group) {
   const candidates = historyLetterCandidatesForGroup(group);
   if (!candidates.length) return null;
-  const index = Math.floor(Math.random() * candidates.length);
-  return candidates[index] || candidates[0] || null;
+  return candidates[0] || null;
 }
 
 function canUseLetterForHistory(letter) {
@@ -1677,6 +1782,19 @@ function workspaceHistoryStorageKey(group) {
   return key ? `${workspaceSessionPrefix}_message_history_${key}` : '';
 }
 
+function stripWorkspaceHistoryRuntimeState(entry = {}) {
+  const { liveLetter, liveLoading, liveError, liveRequestId, mediaLoading, mediaError, mediaRequestId, mediaChecked, ...storedEntry } = entry || {};
+  return storedEntry;
+}
+
+function storedWorkspaceHistoryCache(cache = null) {
+  if (!cache || !Array.isArray(cache.entries)) return cache;
+  return {
+    ...cache,
+    entries: cache.entries.map(stripWorkspaceHistoryRuntimeState)
+  };
+}
+
 function readWorkspaceHistoryCache(group) {
   const key = workspaceHistoryCacheKey(group);
   if (!key) return null;
@@ -1686,9 +1804,14 @@ function readWorkspaceHistoryCache(group) {
   try {
     const cached = JSON.parse(sessionStorage.getItem(storageKey) || localStorage.getItem(storageKey) || 'null');
     if (!cached || !Array.isArray(cached.entries)) return null;
-    workspaceHistoryCache.set(key, cached);
-    sessionStorage.setItem(storageKey, JSON.stringify(cached));
-    return cached;
+    const cleanCache = {
+      ...storedWorkspaceHistoryCache(cached),
+      entries: mergeWorkspaceHistoryWithArchive(cached.entries || [], group)
+    };
+    workspaceHistoryCache.set(key, cleanCache);
+    sessionStorage.setItem(storageKey, JSON.stringify(cleanCache));
+    localStorage.setItem(storageKey, JSON.stringify(cleanCache));
+    return cleanCache;
   } catch {
     sessionStorage.removeItem(storageKey);
     localStorage.removeItem(storageKey);
@@ -1702,8 +1825,9 @@ function saveWorkspaceHistoryCache(group, cache) {
   workspaceHistoryCache.set(key, cache);
   try {
     const storageKey = workspaceHistoryStorageKey(group);
-    sessionStorage.setItem(storageKey, JSON.stringify(cache));
-    localStorage.setItem(storageKey, JSON.stringify(cache));
+    const cleanCache = storedWorkspaceHistoryCache(cache);
+    sessionStorage.setItem(storageKey, JSON.stringify(cleanCache));
+    localStorage.setItem(storageKey, JSON.stringify(cleanCache));
   } catch {}
 }
 
@@ -1716,10 +1840,55 @@ function hashString(value = '') {
   return (hash >>> 0).toString(36);
 }
 
+function workspaceReadIdentity(value = '') {
+  try {
+    const url = new URL(String(value || ''), window.location.href);
+    const match = decodeURIComponent(url.pathname).match(/\/members\/messaging\/read\/([^/?#]+)/i);
+    return String(match?.[1] || '').toLowerCase();
+  } catch {
+    return '';
+  }
+}
+
+function workspaceReadIdFromUrl(value = '') {
+  const identity = workspaceReadIdentity(value);
+  return String(identity.split(':').pop() || '').trim();
+}
+
+function workspaceReadHashFromUrl(value = '') {
+  const readId = workspaceReadIdFromUrl(value);
+  return String(readId.split('-').pop() || '').trim();
+}
+
+function annotateWorkspaceHistoryEntries(entries = []) {
+  const sorted = [...(Array.isArray(entries) ? entries : [])]
+    .sort((a, b) => parseDateValue(b.dateText) - parseDateValue(a.dateText));
+  const outgoingTimes = sorted
+    .filter(entry => entry.direction === 'outgoing')
+    .map(entry => parseDateValue(entry.dateText))
+    .filter(Boolean);
+  return sorted.map(entry => {
+    if (entry.direction === 'outgoing') {
+      return { ...entry, unanswered: false };
+    }
+    if (entry.unanswered === true || entry.sourceUnanswered === true) {
+      return { ...entry, unanswered: true };
+    }
+    const entryTime = parseDateValue(entry.dateText);
+    const hasLaterReply = entryTime
+      ? outgoingTimes.some(time => time > entryTime)
+      : false;
+    return {
+      ...entry,
+      unanswered: !hasLaterReply
+    };
+  });
+}
+
 function normalizeWorkspaceHistoryEntries(entries = [], group = {}) {
   const myName = myProfileName().toLowerCase();
   const manName = String(group?.name || '').trim().toLowerCase();
-  return (Array.isArray(entries) ? entries : [])
+  const normalized = (Array.isArray(entries) ? entries : [])
     .map((item, index) => {
       const author = String(item?.author || '').trim();
       const authorLower = author.toLowerCase();
@@ -1755,14 +1924,91 @@ function normalizeWorkspaceHistoryEntries(entries = [], group = {}) {
         historyUrls: Array.isArray(item?.historyUrls)
           ? item.historyUrls.map(url => String(url || '').trim()).filter(Boolean)
           : [],
-        liveLetter: item?.liveLetter || null,
-        liveLoading: item?.liveLoading === true,
-        liveError: String(item?.liveError || '').trim(),
-        replyTo: String(item?.replyTo || item?.reply_to || '').trim()
+        liveLetter: null,
+        liveLoading: false,
+        liveError: '',
+        liveRequestId: '',
+        replyTo: String(item?.replyTo || item?.reply_to || '').trim(),
+        unanswered: false
       };
     })
-    .filter(item => item.text)
-    .sort((a, b) => parseDateValue(b.dateText) - parseDateValue(a.dateText));
+    .filter(item => item.text);
+  return annotateWorkspaceHistoryEntries(normalized);
+}
+
+function archiveLetterHistoryEntry(letter, group, index = 0) {
+  const historyUrl = String(letter?.messageLink || '').trim();
+  const identity = workspaceReadIdentity(historyUrl) || hashString(historyUrl || letter?.key || `${letter?.dateText || ''}:${index}`);
+  const readId = workspaceReadIdFromUrl(historyUrl);
+  const readHash = workspaceReadHashFromUrl(historyUrl);
+  const attachments = Array.isArray(letter?.attachments) ? letter.attachments : [];
+  return {
+    key: `archive:${workspaceHistoryCacheKey(group)}:${identity}`,
+    author: String(letter?.name || group?.name || '').trim(),
+    dateText: String(letter?.dateText || '').trim(),
+    text: String(letterText(letter) || '').trim(),
+    direction: 'incoming',
+    readByMan: false,
+    readAtText: '',
+    msgId: readId,
+    msgHash: readHash,
+    senderId: String(group?.id || letter?.id || '').trim(),
+    receiverId: '',
+    sentTimestamp: Math.floor((parseDateValue(letter?.dateText) || 0) / 1000) || 0,
+    attachmentHash: String(letter?.attachmentHash || letter?.attachment_hash || '').trim(),
+    videoAttachmentHash: '',
+    hasPhoto: letter?.attachmentsHint === true || attachments.some(item => String(item?.type || '').toLowerCase() !== 'video'),
+    hasVideo: attachments.some(item => String(item?.type || '').toLowerCase() === 'video'),
+    historyUrl,
+    historyUrls: historyUrl ? [historyUrl] : [],
+    liveLetter: null,
+    liveLoading: false,
+    liveError: '',
+    liveRequestId: '',
+    replyTo: '',
+    unanswered: letter?.unanswered === true,
+    sourceUnanswered: letter?.unanswered === true
+  };
+}
+
+function mergeWorkspaceHistoryWithArchive(entries = [], group = {}) {
+  const merged = [...(Array.isArray(entries) ? entries : [])];
+  const seen = new Set();
+  const addSeen = value => {
+    const identity = workspaceReadIdentity(value);
+    if (identity) seen.add(identity);
+  };
+  merged.forEach(entry => {
+    addSeen(entry.historyUrl);
+    (Array.isArray(entry.historyUrls) ? entry.historyUrls : []).forEach(addSeen);
+  });
+  archivedIncomingLettersForGroup(group).forEach((letter, index) => {
+    const historyUrl = String(letter?.messageLink || '').trim();
+    const identity = workspaceReadIdentity(historyUrl);
+    if (!historyUrl) return;
+    if (identity && seen.has(identity)) {
+      const existing = merged.find(entry => {
+        if (workspaceReadIdentity(entry.historyUrl) === identity) return true;
+        return (Array.isArray(entry.historyUrls) ? entry.historyUrls : []).some(url => workspaceReadIdentity(url) === identity);
+      });
+      if (existing) {
+        existing.unanswered = existing.unanswered === true || letter?.unanswered === true;
+        existing.sourceUnanswered = existing.sourceUnanswered === true || letter?.unanswered === true;
+        existing.hasPhoto = existing.hasPhoto === true || letter?.attachmentsHint === true;
+        existing.historyUrl = existing.historyUrl || historyUrl;
+        existing.historyUrls = Array.from(new Set([
+          ...(Array.isArray(existing.historyUrls) ? existing.historyUrls : []),
+          historyUrl
+        ].filter(Boolean)));
+        if (!existing.msgId) existing.msgId = workspaceReadIdFromUrl(historyUrl);
+        if (!existing.msgHash) existing.msgHash = workspaceReadHashFromUrl(historyUrl);
+      }
+      return;
+    }
+    if (identity) seen.add(identity);
+    merged.push(archiveLetterHistoryEntry(letter, group, index));
+  });
+  return annotateWorkspaceHistoryEntries(merged);
 }
 
 function selectedHistoryEntryForGroup(group) {
@@ -1777,15 +2023,6 @@ function restoreWorkspaceSelectedHistory(group) {
   if (!entry) return false;
   workspaceSelectedLetterKey = '';
   rememberSelectedDialog();
-  if (entry.historyUrl && !entry.liveLetter && !entry.liveLoading) {
-    window.setTimeout(() => {
-      const currentGroup = findGroup(workspaceSelectedId);
-      const currentEntry = selectedHistoryEntryForGroup(currentGroup);
-      if (currentEntry && String(currentEntry.key || '') === String(entry.key || '')) {
-        loadWorkspaceHistoryLetterDetails(currentEntry, currentGroup);
-      }
-    }, 0);
-  }
   return true;
 }
 
@@ -1918,17 +2155,18 @@ function renderHistoryLettersPanel(group) {
           const mediaBadge = hasMedia
             ? `<span class="workspace-history-media-badge ${escapeAttr(mediaKind)}" data-history-media-kind="${escapeAttr(mediaKind)}" data-history-media-id="${escapeAttr(mediaId)}" data-history-media-hash="${escapeAttr(mediaHash || '')}" aria-label="${escapeAttr(mediaLabel)}"></span>`
             : '';
-          const liveState = entry.liveLoading
+          const liveState = active && entry.liveLoading
             ? '<span class="workspace-history-live-state loading">opening</span>'
-            : (entry.liveLetter?.realLetter ? '<span class="workspace-history-live-state loaded">live</span>' : '');
+            : (active && entry.liveLetter?.realLetter ? '<span class="workspace-history-live-state loaded">live</span>' : '');
           return `
-            <button class="workspace-letter-card workspace-history-card ${direction} ${active ? 'active' : ''} ${entry.liveLoading ? 'live-loading' : ''} ${entry.liveLetter?.realLetter ? 'live-loaded' : ''} ${entry.readByMan ? 'read-by-man' : ''}" type="button" data-history-key="${escapeAttr(entry.key)}" ${entry.historyUrl ? `data-history-url="${escapeAttr(entry.historyUrl)}" title="Open this Dream letter"` : ''}>
+            <button class="workspace-letter-card workspace-history-card ${direction} ${active ? 'active' : ''} ${entry.liveLoading && active ? 'live-loading' : ''} ${entry.liveLetter?.realLetter && active ? 'live-loaded' : ''} ${entry.readByMan ? 'read-by-man' : ''} ${entry.unanswered ? 'unanswered' : ''}" type="button" data-history-key="${escapeAttr(entry.key)}" ${entry.historyUrl ? `data-history-url="${escapeAttr(entry.historyUrl)}" title="Open this Dream letter"` : ''}>
               <span class="workspace-history-card-main">
                 <span class="workspace-history-media-slot" aria-hidden="${mediaBadge ? 'false' : 'true'}">
                   ${mediaBadge ? `<span class="workspace-history-media">${mediaBadge}</span>` : ''}
                 </span>
                 <span class="workspace-letter-date">
                   <span>${escapeHtml(date)}</span>
+                  ${entry.unanswered ? '<span class="workspace-history-no-reply-inline">No reply</span>' : ''}
                 </span>
               </span>
               <span class="workspace-history-card-status">
@@ -1993,8 +2231,14 @@ function canReplyToLetter(letter) {
 }
 
 function historyEntryReplyLetter(entry, group) {
-  if (!entry || entry.direction === 'outgoing' || !entry.liveLetter || entry.liveError) return null;
-  const messageLink = String(entry.liveLetter.replyUrl || entry.liveLetter.messageLink || '').trim();
+  if (!entry || entry.direction === 'outgoing') return null;
+  const messageLink = String(
+    entry.liveLetter?.replyUrl ||
+    entry.liveLetter?.messageLink ||
+    entry.historyUrl ||
+    (Array.isArray(entry.historyUrls) ? entry.historyUrls[0] : '') ||
+    ''
+  ).trim();
   if (!messageLink) return null;
   return {
     key: `history-reply:${entry.key}`,
@@ -2004,8 +2248,13 @@ function historyEntryReplyLetter(entry, group) {
     messageLink,
     dateText: entry.dateText || '',
     bodyText: entry.liveLetter?.bodyText || entry.text || '',
-    conversation: entry.liveLetter?.conversation || [],
-    attachments: entry.liveLetter?.attachments || [],
+    conversation: entry.liveLetter?.conversation || (entry.text ? [{
+      direction: 'incoming',
+      author: entry.author || group?.name || '',
+      dateText: entry.dateText || '',
+      text: entry.text || ''
+    }] : []),
+    attachments: entry.liveLetter?.attachments || entry.mediaAttachments || [],
     transientHistoryReply: true
   };
 }
@@ -2726,6 +2975,83 @@ function renderConversation(letter, fallbackName, fallbackPhotoUrl = '') {
   }).join('');
 }
 
+function renderDreamOriginalLetter(url = '', options = {}) {
+  const dreamUrl = String(url || '').trim();
+  const isLoading = options.loading === true;
+  const errorText = String(options.error || '').trim();
+  if (isLoading) {
+    return `
+      <section class="workspace-inline-dream-letter loading">
+        <div class="workspace-dream-state"><span class="workspace-live-spinner" aria-hidden="true"></span><strong>Opening letter...</strong></div>
+      </section>
+    `;
+  }
+  if (!dreamUrl) {
+    return `
+      <section class="workspace-inline-dream-letter loading">
+        <div class="workspace-dream-state error">${escapeHtml(errorText || 'Could not open Dream letter')}</div>
+      </section>
+    `;
+  }
+  if (workspaceEmbedded && isWorkspaceDesktopShell()) {
+    return `
+      <section class="workspace-inline-dream-letter workspace-inline-dream-portal" data-dream-inline-url="${escapeAttr(dreamUrl)}" data-dream-inline-partition="${escapeAttr(dreamPartitionForWorkspaceProfile())}">
+        <div class="workspace-dream-state"><span class="workspace-live-spinner" aria-hidden="true"></span><strong>Opening letter...</strong></div>
+      </section>
+    `;
+  }
+  if (isWorkspaceDesktopShell()) {
+    return `
+      <section class="workspace-inline-dream-letter">
+        <div class="workspace-inline-dream-head">
+          <strong>Dream letter</strong>
+        </div>
+        <webview class="workspace-inline-dream-webview" partition="${escapeAttr(dreamPartitionForWorkspaceProfile())}" src="${escapeAttr(dreamUrl)}" allowpopups></webview>
+      </section>
+    `;
+  }
+  return `
+    <section class="workspace-inline-dream-letter fallback">
+      <div class="workspace-dream-state">
+        <button type="button" data-dream-panel-url="${escapeAttr(dreamUrl)}">Open Dream letter</button>
+      </div>
+    </section>
+  `;
+}
+
+function renderHistoryMediaSection(entry = {}) {
+  const attachments = Array.isArray(entry.mediaAttachments) && entry.mediaAttachments.length
+    ? entry.mediaAttachments
+    : (Array.isArray(entry.liveLetter?.attachments) ? entry.liveLetter.attachments : []);
+  if (attachments.length) {
+    return `<div class="workspace-history-media-section">${renderAttachments(attachments)}</div>`;
+  }
+  const canLoad = Boolean(
+    entry.hasPhoto === true ||
+    entry.hasVideo === true ||
+    entry.attachmentHash ||
+    entry.videoAttachmentHash
+  );
+  if (!canLoad) return '';
+  const kind = entry.hasVideo === true && entry.hasPhoto !== true ? 'video' : (entry.hasVideo === true ? 'media' : 'photos');
+  if (entry.mediaLoading) {
+    return `
+      <div class="workspace-history-media-section">
+        <button class="workspace-history-media-button loading" type="button" disabled>
+          <span class="workspace-live-spinner" aria-hidden="true"></span>
+          Opening ${escapeHtml(kind)}...
+        </button>
+      </div>
+    `;
+  }
+  return `
+    <div class="workspace-history-media-section">
+      <button class="workspace-history-media-button" type="button" data-history-open-media="${escapeAttr(entry.key || '')}">Open ${escapeHtml(kind)}</button>
+      ${entry.mediaError ? `<div class="workspace-history-media-error">${escapeHtml(entry.mediaError)}</div>` : ''}
+    </div>
+  `;
+}
+
 function renderHistoryEntry(entry, group) {
   if (!entry) {
     return `
@@ -2736,11 +3062,19 @@ function renderHistoryEntry(entry, group) {
       </div>
     `;
   }
+  if (entry.liveLoading) {
+    return `
+      <div class="workspace-message-group ${entry.direction === 'outgoing' ? 'outgoing' : 'incoming'}">
+        <div class="workspace-message-line">
+          <article class="workspace-chat-message ${entry.direction === 'outgoing' ? 'outgoing' : 'incoming'} workspace-history-open-message">
+            <div class="workspace-live-load-banner"><span class="workspace-live-spinner" aria-hidden="true"></span><strong>Opening letter...</strong></div>
+          </article>
+        </div>
+      </div>
+    `;
+  }
   if (entry.liveLetter) {
-    const liveBanner = entry.liveLoading
-      ? '<div class="workspace-live-load-banner"><span class="workspace-live-spinner" aria-hidden="true"></span><strong>Opening letter...</strong><span>Loading latest letter data</span></div>'
-      : '<div class="workspace-live-load-banner loaded"><strong>Loaded from Dream</strong><span>Real letter data is shown</span></div>';
-    return `${liveBanner}${renderConversation({
+    return `${renderConversation({
       ...entry.liveLetter,
       key: entry.key,
       direction: entry.direction,
@@ -2752,7 +3086,7 @@ function renderHistoryEntry(entry, group) {
         dateText: entry.dateText || '',
         text: entry.text || ''
       }]
-    }, group?.name || '', group?.photoUrl || '')}`;
+    }, group?.name || '', group?.photoUrl || '')}${renderHistoryMediaSection(entry)}`;
   }
   const myName = myProfileName();
   const author = entry.author || group?.name || 'Message';
@@ -2775,8 +3109,7 @@ function renderHistoryEntry(entry, group) {
           <p>${escapeHtml(entry.text || '')}</p>
           ${translationLoading ? '<div class="workspace-translation-result loading">Translating...</div>' : ''}
           ${translationText ? `<div class="workspace-translation-result">${escapeHtml(translationText)}</div>` : ''}
-          ${entry.liveLoading ? '<div class="workspace-live-load-banner"><span class="workspace-live-spinner" aria-hidden="true"></span><strong>Opening letter...</strong><span>Loading latest letter data</span></div>' : ''}
-          ${entry.liveError ? `<div class="workspace-translation-result">${escapeHtml(entry.liveError)}</div>` : ''}
+          ${renderHistoryMediaSection(entry)}
         </article>
       </div>
     </div>
@@ -2805,8 +3138,9 @@ async function loadWorkspaceHistoryLetterDetails(entry, group, options = {}) {
     ? entry.historyUrls.map(url => String(url || '').trim()).filter(Boolean)
     : [];
   if (messageLink && !messageLinks.includes(messageLink)) messageLinks.unshift(messageLink);
-  if (!historyKey || !messageLinks.length || entry?.liveLoading || (entry?.liveLetter && !force)) return null;
-  updateWorkspaceHistoryEntry(group, historyKey, { liveLoading: true, liveError: '', liveLetter: null });
+  if (!historyKey || !messageLinks.length || (entry?.liveLoading && !force) || (entry?.liveLetter && !force)) return null;
+  const liveRequestId = `${Date.now()}:${Math.random().toString(36).slice(2)}`;
+  updateWorkspaceHistoryEntry(group, historyKey, { liveLoading: true, liveError: '', liveLetter: null, liveRequestId });
   renderDialog(group);
   try {
     const response = await apiFetch('/api/workspace/read-letter', {
@@ -2820,6 +3154,8 @@ async function loadWorkspaceHistoryLetterDetails(entry, group, options = {}) {
         requireReplyUrl: entry.direction !== 'outgoing',
         attachmentHash: entry.attachmentHash || '',
         videoAttachmentHash: entry.videoAttachmentHash || '',
+        hasPhoto: entry.hasPhoto === true,
+        hasVideo: entry.hasVideo === true,
         msgId: entry.msgId || '',
         msgHash: entry.msgHash || '',
         expectedText: entry.text || '',
@@ -2834,16 +3170,89 @@ async function loadWorkspaceHistoryLetterDetails(entry, group, options = {}) {
       messageLink: response.letter?.replyUrl || response.letter?.messageLink || response.letter?.resolvedUrl || messageLinks[0],
       direction: entry.direction === 'outgoing' ? 'outgoing' : 'incoming'
     };
+    const latestCache = readWorkspaceHistoryCache(group);
+    const latestEntry = latestCache?.entries?.find(item => String(item.key || '') === historyKey);
+    if (latestEntry && latestEntry.liveRequestId !== liveRequestId) return liveLetter;
     updateWorkspaceHistoryEntry(group, historyKey, {
       liveLetter,
       liveLoading: false,
-      liveError: ''
+      liveError: '',
+      liveRequestId: ''
     });
     return liveLetter;
   } catch (error) {
+    const latestCache = readWorkspaceHistoryCache(group);
+    const latestEntry = latestCache?.entries?.find(item => String(item.key || '') === historyKey);
+    if (latestEntry && latestEntry.liveRequestId !== liveRequestId) return null;
     updateWorkspaceHistoryEntry(group, historyKey, {
       liveLoading: false,
-      liveError: error.message || 'Could not load Dream letter'
+      liveError: error.message || 'Could not load Dream letter',
+      liveRequestId: ''
+    });
+    return null;
+  } finally {
+    renderDialog(findGroup(workspaceSelectedId));
+  }
+}
+
+async function loadWorkspaceHistoryLetterMedia(entry, group, options = {}) {
+  const force = options.force === true;
+  const historyKey = String(entry?.key || '');
+  const messageLink = String(entry?.historyUrl || '').trim();
+  const messageLinks = Array.isArray(entry?.historyUrls)
+    ? entry.historyUrls.map(url => String(url || '').trim()).filter(Boolean)
+    : [];
+  if (messageLink && !messageLinks.includes(messageLink)) messageLinks.unshift(messageLink);
+  const hasCachedMedia = Array.isArray(entry?.mediaAttachments) && entry.mediaAttachments.length;
+  if (!historyKey || !messageLinks.length || (entry?.mediaLoading && !force) || (hasCachedMedia && !force)) return null;
+
+  const mediaRequestId = `${Date.now()}:${Math.random().toString(36).slice(2)}`;
+  updateWorkspaceHistoryEntry(group, historyKey, { mediaLoading: true, mediaError: '', mediaRequestId });
+  renderDialog(group);
+  try {
+    const response = await apiFetch('/api/workspace/read-letter', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        sourceProfileId: activeProfileId,
+        messageLink: messageLinks[0],
+        messageLinks,
+        mediaOnly: true,
+        requireLive: true,
+        requireReplyUrl: false,
+        attachmentHash: entry.attachmentHash || '',
+        videoAttachmentHash: entry.videoAttachmentHash || '',
+        hasPhoto: entry.hasPhoto === true,
+        hasVideo: entry.hasVideo === true,
+        msgId: entry.msgId || '',
+        msgHash: entry.msgHash || '',
+        expectedText: entry.text || '',
+        expectedDateText: entry.dateText || '',
+        id: group?.id || '',
+        name: group?.name || '',
+        direction: entry.direction === 'outgoing' ? 'outgoing' : 'incoming'
+      })
+    }, 70000);
+    const attachments = Array.isArray(response?.letter?.attachments) ? response.letter.attachments : [];
+    const latestCache = readWorkspaceHistoryCache(group);
+    const latestEntry = latestCache?.entries?.find(item => String(item.key || '') === historyKey);
+    if (latestEntry && latestEntry.mediaRequestId !== mediaRequestId) return attachments;
+    updateWorkspaceHistoryEntry(group, historyKey, {
+      mediaAttachments: attachments,
+      mediaLoading: false,
+      mediaChecked: true,
+      mediaError: attachments.length ? '' : 'Could not load photos. Try again.',
+      mediaRequestId: ''
+    });
+    return attachments;
+  } catch (error) {
+    const latestCache = readWorkspaceHistoryCache(group);
+    const latestEntry = latestCache?.entries?.find(item => String(item.key || '') === historyKey);
+    if (latestEntry && latestEntry.mediaRequestId !== mediaRequestId) return null;
+    updateWorkspaceHistoryEntry(group, historyKey, {
+      mediaLoading: false,
+      mediaError: error.message || 'Could not open photos',
+      mediaRequestId: ''
     });
     return null;
   } finally {
@@ -2948,7 +3357,10 @@ async function loadWorkspaceHistoryIntoPanel(group, options = {}) {
   renderDialog(targetGroup);
   try {
     const response = await fetchWorkspaceMessageHistory(targetGroup, letter);
-    const entries = normalizeWorkspaceHistoryEntries(response.entries || [], targetGroup);
+    const entries = mergeWorkspaceHistoryWithArchive(
+      normalizeWorkspaceHistoryEntries(response.entries || [], targetGroup),
+      targetGroup
+    );
     const cache = {
       entries,
       sourceUrl: response.sourceUrl || '',
@@ -3010,7 +3422,7 @@ function renderAttachments(attachments = []) {
   const openText = `Open ${itemLabel}`;
   const hideText = `Hide ${itemLabel}`;
   return `
-    <details class="workspace-attachments">
+    <details class="workspace-attachments" open>
       <summary>
         <span class="workspace-attachments-open-label">${escapeHtml(hideText)}</span>
         <span class="workspace-attachments-closed-label">${escapeHtml(openText)}</span>
@@ -3136,7 +3548,6 @@ function renderDialog(group) {
     ? '<div class="workspace-message-loading error">Could not load letter text</div>'
     : '';
 
-  const isReadMode = workspaceListFilter === 'read';
   const hideLetterPanel = false;
   dialog.innerHTML = `
     <div class="workspace-reader ${hideLetterPanel ? 'read-mode' : ''}">
@@ -3163,16 +3574,17 @@ function renderDialog(group) {
   const replyLetter = selectedReplyLetterForGroup(group);
   const canReply = canReplyToLetter(replyLetter);
   const canLoadHistory = Boolean(canUseLetterForHistory(selectedLetter) ? selectedLetter : historyLetterCandidatesForGroup(group)[0]);
-  composer?.classList.toggle('hidden', isReadMode);
-  reply.disabled = isReadMode || !canReply;
-  if (historyBtn) historyBtn.disabled = isReadMode || !canLoadHistory;
-  photoBtn.disabled = isReadMode || !canReply;
-  videoBtn.disabled = isReadMode || !canReply;
-  if (replyTranslateBtn) replyTranslateBtn.disabled = isReadMode || !canReply || !reply.value.trim();
-  sendBtn.disabled = isReadMode || !canReply;
+  composer?.classList.remove('hidden');
+  reply.disabled = !canReply;
+  if (historyBtn) historyBtn.disabled = !canLoadHistory;
+  photoBtn.disabled = !canReply;
+  videoBtn.disabled = !canReply;
+  if (replyTranslateBtn) replyTranslateBtn.disabled = !canReply || !reply.value.trim();
+  sendBtn.disabled = !canReply;
   reply.placeholder = 'Enter your message';
   renderPendingReplyAttachments();
   resizeReplyBox();
+  syncWorkspaceDreamInlinePortal();
 }
 
 async function loadSelectedLetterBody() {
@@ -4238,6 +4650,14 @@ menList.addEventListener('click', event => {
 });
 
 dialog.addEventListener('click', event => {
+  const dreamPanelButton = event.target.closest('[data-dream-panel-url]');
+  if (dreamPanelButton) {
+    event.preventDefault();
+    event.stopPropagation();
+    openWorkspaceDreamPanel(dreamPanelButton.dataset.dreamPanelUrl || '')
+      .catch(error => alert(error.message || 'Could not open Dream letter'));
+    return;
+  }
   const translateButton = event.target.closest('.workspace-translate-message');
   if (!translateButton) return;
   event.preventDefault();
@@ -4368,6 +4788,15 @@ dialog.addEventListener('click', event => {
     setWorkspaceLettersFilter(filterButton.dataset.letterFilter);
     return;
   }
+  const historyMediaButton = event.target.closest('[data-history-open-media]');
+  if (historyMediaButton && workspaceSelectedId) {
+    event.preventDefault();
+    event.stopPropagation();
+    const group = findGroup(workspaceSelectedId);
+    const entry = selectedHistoryEntryForGroup(group);
+    if (entry) loadWorkspaceHistoryLetterMedia(entry, group, { force: true });
+    return;
+  }
   const historyCard = event.target.closest('[data-history-key]');
   if (historyCard && workspaceSelectedId) {
     const group = findGroup(workspaceSelectedId);
@@ -4377,7 +4806,8 @@ dialog.addEventListener('click', event => {
     rememberSelectedDialog();
     renderDialog(group);
     const entry = selectedHistoryEntryForGroup(group);
-    if (entry?.historyUrl || (Array.isArray(entry?.historyUrls) && entry.historyUrls.length)) {
+    const hasText = Boolean(String(entry?.text || '').trim() || String(entry?.liveLetter?.bodyText || '').trim() || (Array.isArray(entry?.liveLetter?.conversation) && entry.liveLetter.conversation.some(item => String(item?.text || '').trim())));
+    if (entry && !hasText && (entry.historyUrl || (Array.isArray(entry.historyUrls) && entry.historyUrls.length))) {
       loadWorkspaceHistoryLetterDetails(entry, group, { force: true });
     }
     return;
@@ -4810,6 +5240,20 @@ window.addEventListener('storage', event => {
         console.warn('Could not refresh inbox after connection storage event', error);
       });
     }
+  }
+});
+
+dreamClose?.addEventListener('click', closeWorkspaceDreamPanel);
+dreamExternal?.addEventListener('click', () => {
+  if (!workspaceDreamPanelUrl) return;
+  openWorkspaceDreamUrl(workspaceDreamPanelUrl).catch(error => alert(error.message || 'Could not open Dream window'));
+});
+dreamModal?.addEventListener('click', event => {
+  if (event.target === dreamModal) closeWorkspaceDreamPanel();
+  const external = event.target.closest('[data-dream-open-external]');
+  if (external) {
+    openWorkspaceDreamUrl(external.dataset.dreamOpenExternal || workspaceDreamPanelUrl)
+      .catch(error => alert(error.message || 'Could not open Dream window'));
   }
 });
 loadWorkspace();

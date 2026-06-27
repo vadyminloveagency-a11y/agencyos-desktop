@@ -1339,6 +1339,83 @@ async function openDreamUrl(url) {
   return { ok: true };
 }
 
+let agencyDreamInlineHost = null;
+let agencyDreamInlineWebview = null;
+let agencyDreamInlineKey = '';
+
+function dreamPartitionForActiveProfile() {
+  return `persist:dream-profile-${String(activeProfileId || '').replace(/[^\w.-]/g, '_')}`;
+}
+
+function ensureAgencyDreamInlineHost() {
+  if (agencyDreamInlineHost) return agencyDreamInlineHost;
+  agencyDreamInlineHost = document.createElement('div');
+  agencyDreamInlineHost.className = 'agency-dream-inline-host hidden';
+  agencyDreamInlineHost.innerHTML = `
+    <div class="agency-dream-inline-head">Dream letter</div>
+    <div class="agency-dream-inline-body">
+      <div class="agency-dream-inline-state">Opening letter...</div>
+    </div>
+  `;
+  document.body.appendChild(agencyDreamInlineHost);
+  return agencyDreamInlineHost;
+}
+
+function hideAgencyDreamInline() {
+  if (!agencyDreamInlineHost) return { ok: true };
+  agencyDreamInlineHost.classList.add('hidden');
+  agencyDreamInlineKey = '';
+  agencyDreamInlineWebview?.remove();
+  agencyDreamInlineWebview = null;
+  return { ok: true };
+}
+
+function showAgencyDreamInline(payload = {}, frame) {
+  const targetUrl = String(payload.url || '').trim();
+  if (!targetUrl) return hideAgencyDreamInline();
+
+  const sourceRect = frame?.getBoundingClientRect?.();
+  const rect = payload.rect || {};
+  if (!sourceRect || !rect.width || !rect.height) return { ok: false, error: 'Dream frame is not visible' };
+
+  const host = ensureAgencyDreamInlineHost();
+  const body = host.querySelector('.agency-dream-inline-body');
+  const left = Math.round(sourceRect.left + Number(rect.left || 0));
+  const top = Math.round(sourceRect.top + Number(rect.top || 0));
+  const width = Math.max(260, Math.round(Number(rect.width || 0)));
+  const height = Math.max(220, Math.round(Number(rect.height || 0)));
+  host.style.left = `${left}px`;
+  host.style.top = `${top}px`;
+  host.style.width = `${width}px`;
+  host.style.height = `${height}px`;
+  host.classList.remove('hidden');
+
+  const partition = String(payload.partition || dreamPartitionForActiveProfile()).trim() || dreamPartitionForActiveProfile();
+  const key = `${partition} ${targetUrl}`;
+  if (agencyDreamInlineWebview && agencyDreamInlineKey === key) return { ok: true };
+
+  agencyDreamInlineKey = key;
+  agencyDreamInlineWebview?.remove();
+  agencyDreamInlineWebview = document.createElement('webview');
+  agencyDreamInlineWebview.className = 'agency-dream-inline-webview';
+  agencyDreamInlineWebview.setAttribute('partition', partition);
+  agencyDreamInlineWebview.setAttribute('allowpopups', '');
+  agencyDreamInlineWebview.setAttribute('src', targetUrl);
+  agencyDreamInlineWebview.addEventListener('did-start-loading', () => {
+    host.classList.add('loading');
+  });
+  agencyDreamInlineWebview.addEventListener('did-stop-loading', () => {
+    host.classList.remove('loading');
+  });
+  agencyDreamInlineWebview.addEventListener('did-fail-load', event => {
+    if (event.errorCode === -3) return;
+    host.classList.add('failed');
+  });
+  body.innerHTML = '';
+  body.appendChild(agencyDreamInlineWebview);
+  return { ok: true };
+}
+
 document.addEventListener('click', event => {
   const link = event.target.closest?.('a[href]');
   if (!link) return;
@@ -2503,6 +2580,24 @@ window.addEventListener('message', event => {
             response: { ok: false, error: error.message || 'Could not open Dream window' }
           }, '*');
         });
+      return;
+    }
+    if (command === 'SHOW_DREAM_INLINE') {
+      const response = showAgencyDreamInline(payload || {}, workspaceCommandFrame);
+      workspaceCommandFrame.contentWindow?.postMessage({
+        type: 'DREAM_CRM_WORKSPACE_RESPONSE',
+        requestId,
+        response
+      }, '*');
+      return;
+    }
+    if (command === 'HIDE_DREAM_INLINE') {
+      const response = hideAgencyDreamInline();
+      workspaceCommandFrame.contentWindow?.postMessage({
+        type: 'DREAM_CRM_WORKSPACE_RESPONSE',
+        requestId,
+        response
+      }, '*');
       return;
     }
     extensionCommand(command, payload || {}, Number(timeout) || 45000)

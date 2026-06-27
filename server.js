@@ -42,6 +42,8 @@ const DREAM_LOGIN_URL = 'https://www.dream-singles.com/login';
 const DREAM_INBOX_URL = 'https://www.dream-singles.com/members/messaging/inbox';
 const DREAM_ACCOUNT_URL = 'https://www.dream-singles.com/members/account/';
 const DREAM_HEARTBEAT_INTERVAL_MS = Math.max(15_000, Number(process.env.DREAM_HEARTBEAT_INTERVAL_MS || 45_000) || 45_000);
+const WORKSPACE_ATTACHMENT_CACHE_TTL_MS = Math.max(0, Number(process.env.DREAM_TEAM_WORKSPACE_ATTACHMENTS_TTL_MS || 24 * 60 * 60 * 1000) || 0);
+const WORKSPACE_ATTACHMENT_CLEANUP_INTERVAL_MS = Math.max(15 * 60 * 1000, Number(process.env.DREAM_TEAM_WORKSPACE_ATTACHMENTS_CLEANUP_INTERVAL_MS || 60 * 60 * 1000) || 60 * 60 * 1000);
 const DREAM_BROWSER_HEADERS = {
   'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36',
   'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
@@ -471,7 +473,7 @@ function cleanWorkspaceAttachments(value) {
       const localUrl = String(item?.localUrl || '').trim();
       const dedupeKey = localUrl || url;
       if (!dedupeKey || seen.has(dedupeKey)) return null;
-      if (/emoji|smil|emoticon/i.test(url)) return null;
+      if (/emoji|smil|emoticon|logo|banner|sprite|icon|captcha|avatar|placeholder|loader|spinner/i.test(url)) return null;
       seen.add(dedupeKey);
       const rawType = String(item?.type || '').toLowerCase();
       const type = rawType === 'video' || /\.(mp4|webm|mov|m4v)(?:[?#]|$)/i.test(url) ? 'video' : 'image';
@@ -500,6 +502,42 @@ function findSavedWorkspaceLetterByMessageLink(db, profileId = '', rawUrl = '') 
     (Array.isArray(letter?.conversation) && letter.conversation.length) ||
     (Array.isArray(letter?.attachments) && letter.attachments.length)
   )) || null;
+}
+
+function findSavedWorkspaceLetterByHistoryMeta(db, profileId = '', meta = {}) {
+  const letters = db?.profiles?.[String(profileId || '')]?.workspaceInbox;
+  if (!Array.isArray(letters)) return null;
+  const expectedText = compactLetterMatchText(meta.expectedText || meta.text || '');
+  const expectedNeedle = expectedText.length >= 30 ? expectedText.slice(0, Math.min(140, expectedText.length)) : '';
+  const expectedDate = cleanWorkspaceText(meta.expectedDateText || meta.dateText || '').toLowerCase();
+  const manId = cleanWorkspaceText(meta.id || meta.manId || '');
+  const direction = String(meta.direction || '').toLowerCase();
+  const msgId = cleanWorkspaceText(meta.msgId || meta.msg_id || '').toLowerCase();
+  const msgHash = cleanWorkspaceText(meta.msgHash || meta.msg_hash || '').toLowerCase();
+
+  const scoreLetter = letter => {
+    if (!letter) return 0;
+    if (manId && cleanWorkspaceText(letter.id || letter.manId || '').toLowerCase() !== manId.toLowerCase()) return 0;
+    if (direction && String(letter.direction || '').toLowerCase() && String(letter.direction || '').toLowerCase() !== direction) return 0;
+    let score = 0;
+    const identity = workspaceMessageIdentity(letter.messageLink || letter.sourceUrl || '');
+    if (msgId && identity.includes(msgId)) score += 4;
+    if (msgHash && identity.includes(msgHash)) score += 4;
+    const dateText = cleanWorkspaceText(letter.dateText || '').toLowerCase();
+    if (expectedDate && dateText && (dateText.includes(expectedDate) || expectedDate.includes(dateText))) score += 2;
+    const text = compactLetterMatchText([
+      letter.bodyText || '',
+      ...(Array.isArray(letter.conversation) ? letter.conversation.map(item => item?.text || '') : [])
+    ].join('\n'));
+    if (expectedNeedle && text.includes(expectedNeedle)) score += 6;
+    if (Array.isArray(letter.attachments) && letter.attachments.length) score += 1;
+    return score;
+  };
+
+  return letters
+    .map(letter => ({ letter, score: scoreLetter(letter) }))
+    .filter(item => item.score >= (expectedNeedle ? 6 : 5))
+    .sort((a, b) => b.score - a.score)[0]?.letter || null;
 }
 
 function mergeSavedWorkspaceLetterDetails(liveLetter = {}, savedLetter = null) {
@@ -548,6 +586,67 @@ function removeWorkspaceAttachmentCacheForProfile(profileId = '') {
   return removedBytes;
 }
 
+function cleanupWorkspaceAttachmentCache(options = {}) {
+  const ttlMs = Math.max(0, Number(options.ttlMs ?? WORKSPACE_ATTACHMENT_CACHE_TTL_MS) || 0);
+  if (!ttlMs) return { removedFiles: 0, removedBytes: 0 };
+  const root = path.resolve(WORKSPACE_ATTACHMENTS_DIR);
+  if (!fs.existsSync(root)) return { removedFiles: 0, removedBytes: 0 };
+  const cutoff = Date.now() - ttlMs;
+  let removedFiles = 0;
+  let removedBytes = 0;
+  const directories = [];
+  const stack = [root];
+
+  while (stack.length) {
+    const current = stack.pop();
+    directories.push(current);
+    let items = [];
+    try { items = fs.readdirSync(current, { withFileTypes: true }); } catch { continue; }
+    for (const item of items) {
+      const itemPath = path.join(current, item.name);
+      if (item.isDirectory()) {
+        stack.push(itemPath);
+        continue;
+      }
+      try {
+        const stat = fs.statSync(itemPath);
+        const lastTouched = Math.max(stat.mtimeMs || 0, stat.ctimeMs || 0);
+        if (lastTouched > cutoff) continue;
+        removedBytes += stat.size || 0;
+        fs.rmSync(itemPath, { force: true });
+        removedFiles += 1;
+      } catch {}
+    }
+  }
+
+  directories
+    .sort((a, b) => b.length - a.length)
+    .forEach(directory => {
+      if (directory === root) return;
+      try {
+        if (!fs.readdirSync(directory).length) fs.rmdirSync(directory);
+      } catch {}
+    });
+
+  return { removedFiles, removedBytes };
+}
+
+function startWorkspaceAttachmentCacheCleanup() {
+  const run = () => {
+    try {
+      const result = cleanupWorkspaceAttachmentCache();
+      if (result.removedFiles) {
+        console.log(`[workspace-attachments] removed ${result.removedFiles} old files (${result.removedBytes} bytes)`);
+      }
+    } catch (error) {
+      console.warn(`[workspace-attachments] cleanup failed: ${error.message || error}`);
+    }
+  };
+  run();
+  const timer = setInterval(run, WORKSPACE_ATTACHMENT_CLEANUP_INTERVAL_MS);
+  if (typeof timer.unref === 'function') timer.unref();
+}
+
 function workspaceAttachmentExtension(attachment, contentType = '') {
   if (attachment.type === 'video') return '.mp4';
   const fromUrl = String(attachment.sourceUrl || attachment.url || '').split('?')[0].match(/\.(jpe?g|png|gif|webp|mp4|webm|mov|m4v)$/i)?.[0];
@@ -566,6 +665,31 @@ function workspaceAttachmentFileName(profileId, letterKey, index, attachment, co
     .digest('hex')
     .slice(0, 20);
   return `${String(profileId || 'profile').replace(/[^\w-]/g, '_')}/${String(letterKey || 'letter').replace(/[^\w-]/g, '_').slice(0, 80)}/${index + 1}-${hash}${workspaceAttachmentExtension(attachment, contentType)}`;
+}
+
+function workspaceMediaResponseLooksUseful(url = '', contentType = '', bytesLength = 0, type = 'image') {
+  const marker = `${url} ${contentType}`.toLowerCase();
+  const allowedDreamMediaHost =
+    /(^|\.)dream-singles\.com\//i.test(url) ||
+    /profile-photos-cdn\.dream-singles\.com\//i.test(url) ||
+    /dream-marriage-attach\.s3\.amazonaws\.com\/msg\//i.test(url);
+  if (!url || !allowedDreamMediaHost) return false;
+  if (/logo|banner|sprite|icon|captcha|avatar|placeholder|loader|spinner|emoji|smil|emoticon|assets\/(?:css|js|img|image|icons?)|\/(?:css|js|fonts?)\//i.test(marker)) return false;
+  if (/\/members\/media\/gallery\/(?:loadImages|loadMedia|loadFolders)\b/i.test(marker)) return false;
+  if (type === 'video') return bytesLength >= 50 * 1024 && /video|mp4|webm|octet-stream|\.mp4|\.webm|\.mov|\.m4v/i.test(marker);
+  return bytesLength >= 10 * 1024 && /image|octet-stream|profile-photos-cdn|dream-marriage-attach|attachment|photo|media|gallery|uploads?|\.jpe?g|\.png|\.webp|\.gif/i.test(marker);
+}
+
+function cacheWorkspaceAttachmentBytes(profileId, letterKey, index, attachment = {}, bytes = Buffer.alloc(0), contentType = '') {
+  if (!bytes?.length) return null;
+  const type = attachment.type === 'video' || /video|mp4|webm/i.test(contentType) ? 'video' : 'image';
+  if (!workspaceMediaResponseLooksUseful(attachment.sourceUrl || attachment.url || '', contentType, bytes.length, type)) return null;
+  const relativeName = workspaceAttachmentFileName(profileId, letterKey, index, { ...attachment, type }, contentType);
+  const absolutePath = path.join(WORKSPACE_ATTACHMENTS_DIR, relativeName);
+  fs.mkdirSync(path.dirname(absolutePath), { recursive: true });
+  fs.writeFileSync(absolutePath, bytes);
+  const localUrl = `/workspace-attachments/${relativeName.replace(/\\/g, '/')}`;
+  return { type, url: localUrl, localUrl, sourceUrl: attachment.sourceUrl || attachment.url || '', label: attachment.label || (type === 'video' ? 'Video' : 'Photo') };
 }
 
 async function cacheWorkspaceAttachments(profileId, letterKey, attachments = [], jar = null) {
@@ -589,24 +713,13 @@ async function cacheWorkspaceAttachments(profileId, letterKey, attachments = [],
       const contentType = response.headers.get('content-type') || '';
       const length = Number(response.headers.get('content-length') || 0);
       const maxBytes = attachment.type === 'video' ? 80 * 1024 * 1024 : 12 * 1024 * 1024;
-      if (!response.ok || (contentType && !/image|video|octet-stream/i.test(contentType)) || length > maxBytes) {
-        cached.push(attachment);
-        continue;
-      }
+      if (!response.ok || (contentType && !/image|video|octet-stream/i.test(contentType)) || length > maxBytes) continue;
       const bytes = Buffer.from(await response.arrayBuffer());
-      if (!bytes.length || bytes.length > maxBytes) {
-        cached.push(attachment);
-        continue;
-      }
-      const relativeName = workspaceAttachmentFileName(profileId, letterKey, index, attachment, contentType);
-      const absolutePath = path.join(WORKSPACE_ATTACHMENTS_DIR, relativeName);
-      fs.mkdirSync(path.dirname(absolutePath), { recursive: true });
-      fs.writeFileSync(absolutePath, bytes);
-      const localUrl = `/workspace-attachments/${relativeName.replace(/\\/g, '/')}`;
-      cached.push({ ...attachment, url: localUrl, localUrl, sourceUrl });
-    } catch {
-      cached.push(attachment);
-    }
+      if (!bytes.length || bytes.length > maxBytes) continue;
+      if (attachment.type !== 'video' && bytes.length < 10 * 1024) continue;
+      const saved = cacheWorkspaceAttachmentBytes(profileId, letterKey, index, { ...attachment, sourceUrl }, bytes, contentType);
+      if (saved) cached.push(saved);
+    } catch {}
   }
 
   return cached;
@@ -3716,7 +3829,11 @@ function collectWorkspaceLetterHtml(html = '', sourceUrl = DREAM_INBOX_URL, fall
   const addAttachment = (type, url, label = '') => {
     const cleanUrl = String(url || '').trim();
     if (!cleanUrl || seenAttachments.has(cleanUrl)) return;
-    if (!/(^|\.)dream-singles\.com\//i.test(cleanUrl) && !/dream-singles|profile-photos-cdn/i.test(cleanUrl)) return;
+    if (
+      !/(^|\.)dream-singles\.com\//i.test(cleanUrl) &&
+      !/profile-photos-cdn\.dream-singles\.com\//i.test(cleanUrl) &&
+      !/dream-marriage-attach\.s3\.amazonaws\.com\/msg\//i.test(cleanUrl)
+    ) return;
     seenAttachments.add(cleanUrl);
     attachments.push({ type, url: cleanUrl, label: cleanWorkspaceText(label || '') });
   };
@@ -3764,6 +3881,23 @@ function collectWorkspaceLetterHtml(html = '', sourceUrl = DREAM_INBOX_URL, fall
       if (!url) continue;
       const type = attachmentTypeForUrl(url, context);
       if (type) addAttachment(type, url, type === 'video' ? 'Video' : 'Photo');
+    }
+  }
+  for (const tagMatch of String(html || '').matchAll(/<(?:a|button|div|span|img)\b[^>]*(?:attach|paperclip|photo|image|video|media|gallery|fancybox|lightbox|download|preview|open)[^>]*>/gi)) {
+    const rawTag = tagMatch[0] || '';
+    const context = String(html || '').slice(Math.max(0, tagMatch.index - 800), Math.min(String(html || '').length, tagMatch.index + 1400));
+    for (const attr of ['href', 'data-href', 'data-url', 'data-src', 'data-original', 'data-lazy-src', 'data-full', 'data-image', 'data-video-url', 'data-file', 'src']) {
+      const url = absoluteDreamUrl(attrFromTag(rawTag, attr), sourceUrl);
+      if (!url) continue;
+      const type = attachmentTypeForUrl(url, `${rawTag} ${context}`) ||
+        (/(?:attach|paperclip|photo|image|gallery|download|preview|open)/i.test(`${rawTag} ${context}`) ? 'image' : '');
+      if (type) addAttachment(type, url, type === 'video' ? 'Video' : 'Photo');
+    }
+    for (const quoted of rawTag.matchAll(/["']([^"']*(?:attach|download|photo|image|video|media|gallery|preview|open|view)[^"']*)["']/gi)) {
+      const url = absoluteDreamUrl(quoted[1], sourceUrl);
+      if (!url) continue;
+      const type = attachmentTypeForUrl(url, `${rawTag} ${context}`) || (/video/i.test(`${rawTag} ${context}`) ? 'video' : 'image');
+      addAttachment(type, url, type === 'video' ? 'Video' : 'Photo');
     }
   }
   for (const quoted of attachmentCandidateHtml.matchAll(/["']([^"']*(?:uploads?|media|gallery|attachment|photo|image|video)[^"']*\.(?:jpe?g|png|webp|gif|mp4|webm|mov|m4v)(?:[?#][^"']*)?)["']/gi)) {
@@ -3889,6 +4023,93 @@ async function resolveWorkspaceHistoryAttachments(profileId, meta = {}, sourceUr
     if (found.length) break;
   }
   return cleanWorkspaceAttachments(found);
+}
+
+async function captureWorkspaceLetterMediaFromBrowser(db, user, profileId = '', letterUrl = '', letterKey = '') {
+  const id = String(profileId || '');
+  if (!id || !letterUrl) return [];
+  let browserSession;
+  try {
+    browserSession = await startDreamBrowser(db, user, id, { headless: true });
+  } catch (error) {
+    console.warn(`[workspace-media] ${id}: browser capture unavailable: ${error.message || error}`);
+    return [];
+  }
+  const page = await browserSession.context.newPage();
+  const captures = [];
+  const seen = new Set();
+  const maxItems = 12;
+
+  const captureResponse = async response => {
+    if (captures.length >= maxItems) return;
+    try {
+      const url = response.url();
+      if (seen.has(url)) return;
+      const headers = response.headers();
+      const contentType = headers['content-type'] || '';
+      if (!/image|video|octet-stream/i.test(contentType)) return;
+      const type = /video/i.test(contentType) || /\.(?:mp4|webm|mov|m4v)(?:[?#]|$)/i.test(url) ? 'video' : 'image';
+      const contentLength = Number(headers['content-length'] || 0);
+      if (contentLength && !workspaceMediaResponseLooksUseful(url, contentType, contentLength, type)) return;
+      const bytes = await response.body().catch(() => null);
+      if (!bytes?.length || !workspaceMediaResponseLooksUseful(url, contentType, bytes.length, type)) return;
+      seen.add(url);
+      const saved = cacheWorkspaceAttachmentBytes(id, letterKey || workspaceMessageIdentity(letterUrl) || 'letter', captures.length, {
+        type,
+        url,
+        sourceUrl: url,
+        label: type === 'video' ? 'Video' : 'Photo'
+      }, Buffer.from(bytes), contentType);
+      if (saved) captures.push(saved);
+    } catch {}
+  };
+
+  page.on('response', captureResponse);
+  try {
+    await page.goto(letterUrl, { waitUntil: 'domcontentloaded', timeout: 45_000 });
+    await page.waitForLoadState('networkidle', { timeout: 8_000 }).catch(() => {});
+    const clickSelectors = [
+      'a:has-text("Photo")',
+      'button:has-text("Photo")',
+      'a:has-text("Video")',
+      'button:has-text("Video")',
+      'a:has-text("Boomerang")',
+      'button:has-text("Boomerang")',
+      '[class*="attach" i]',
+      '[id*="attach" i]',
+      '[data-url*="attach" i]',
+      '[data-href*="attach" i]',
+      '[onclick*="attach" i]',
+      '[onclick*="photo" i]',
+      '[onclick*="video" i]',
+      '[href*="attach" i]',
+      '[href*="photo" i]',
+      '[href*="video" i]',
+      '[class*="paperclip" i]',
+      '[class*="fancybox" i]',
+      '[class*="lightbox" i]'
+    ];
+    for (const selector of clickSelectors) {
+      if (captures.length >= maxItems) break;
+      const count = Math.min(8, await page.locator(selector).count().catch(() => 0));
+      for (let index = 0; index < count; index += 1) {
+        if (captures.length >= maxItems) break;
+        const target = page.locator(selector).nth(index);
+        const visible = await target.isVisible().catch(() => false);
+        if (!visible) continue;
+        await target.scrollIntoViewIfNeeded({ timeout: 1000 }).catch(() => {});
+        await target.click({ timeout: 2500, force: true }).catch(() => {});
+        await page.waitForTimeout(1200).catch(() => {});
+      }
+    }
+    await page.waitForTimeout(2000).catch(() => {});
+  } catch (error) {
+    console.warn(`[workspace-media] ${id}: could not capture letter media: ${error.message || error}`);
+  } finally {
+    page.off('response', captureResponse);
+    await page.close().catch(() => {});
+  }
+  return cleanWorkspaceAttachments(captures);
 }
 
 function extractWorkspaceMessageHistoryCandidates(html = '') {
@@ -4102,8 +4323,7 @@ function buildWorkspaceHistoryReadUrl(entry = {}, context = {}) {
 
 function buildWorkspaceHistoryReadUrls(entry = {}, context = {}) {
   const msgId = cleanWorkspaceText(entry.msgId || '');
-  const msgHash = cleanWorkspaceText(entry.msgHash || '');
-  if (!msgId && !msgHash) return [];
+  if (!msgId) return [];
   const monthPrefix = workspaceHistoryMonthPrefix(entry.sentTimestamp);
   if (!monthPrefix) return [];
   const version = cleanWorkspaceText(
@@ -4111,27 +4331,11 @@ function buildWorkspaceHistoryReadUrls(entry = {}, context = {}) {
   );
   const isOutgoing = Number(entry.sender) === 0;
   const boxPrefix = `${isOutgoing ? 'letters_women_sent' : 'letters_read'}_${monthPrefix}_${version}`;
-  const counterpartyId = cleanWorkspaceText(isOutgoing ? entry.receiverId : entry.senderId);
-  const readIds = new Set();
-  const addReadId = value => {
-    const clean = cleanWorkspaceText(value).replace(/^.*?:/, '');
-    if (!clean || /[/?#]/.test(clean)) return;
-    readIds.add(clean);
-  };
-  addReadId(msgId);
-  if (msgId && msgHash && !msgId.includes(msgHash)) addReadId(`${msgId}-${msgHash}`);
-  if (counterpartyId && msgId && msgHash && !msgId.startsWith(`${counterpartyId}-`)) {
-    addReadId(`${counterpartyId}-${msgId}-${msgHash}`);
-  }
-  if (counterpartyId && msgHash) addReadId(`${counterpartyId}-0-${msgHash}`);
-
-  return [...readIds].map(readId => {
-    const url = new URL(`/members/messaging/read/${boxPrefix}:${readId}`, context.baseUrl || DREAM_INBOX_URL);
-    url.searchParams.set('mode', isOutgoing ? 'sent' : 'inbox');
-    url.searchParams.set('page', '1');
-    url.searchParams.set('view', 'all');
-    return url.toString();
-  });
+  const url = new URL(`/members/messaging/read/${boxPrefix}:${msgId}`, context.baseUrl || DREAM_INBOX_URL);
+  url.searchParams.set('mode', isOutgoing ? 'sent' : 'inbox');
+  url.searchParams.set('page', '1');
+  url.searchParams.set('view', 'all');
+  return [url.toString()];
 }
 
 async function collectWorkspaceMessageHistory(profileId, rawUrl = '', fallbackName = '') {
@@ -6788,7 +6992,42 @@ app.post('/api/workspace/read-letter', async (req, res) => {
 
   try {
     const db = readDb();
-    const savedLetter = findSavedWorkspaceLetterByMessageLink(db, req.profileId, urls[0].href);
+    const savedLetter = findSavedWorkspaceLetterByMessageLink(db, req.profileId, urls[0].href) ||
+      findSavedWorkspaceLetterByHistoryMeta(db, req.profileId, {
+        expectedText: req.body?.expectedText || '',
+        expectedDateText: req.body?.expectedDateText || '',
+        id: req.body?.id || '',
+        direction: req.body?.direction || '',
+        msgId: req.body?.msgId || '',
+        msgHash: req.body?.msgHash || ''
+      });
+    if (req.body?.mediaOnly === true && savedLetter?.attachments?.length) {
+      return res.json({
+        ok: true,
+        letter: {
+          ...mergeSavedWorkspaceLetterDetails({
+            requiresLogin: false,
+            sourceUrl: urls[0].href,
+            replyUrl: urls[0].href,
+            attachments: [],
+            conversation: []
+          }, savedLetter),
+          messageLink: savedLetter.messageLink || urls[0].href,
+          resolvedUrl: savedLetter.messageLink || urls[0].href,
+          realLetter: true,
+          mediaCached: true
+        }
+      });
+    }
+    if (savedLetter?.messageLink) {
+      try {
+        const savedUrl = new URL(savedLetter.messageLink, DREAM_INBOX_URL);
+        if (/(^|\.)dream-singles\.com$/i.test(savedUrl.hostname) && !seenUrls.has(savedUrl.href)) {
+          seenUrls.add(savedUrl.href);
+          urls.push(savedUrl);
+        }
+      } catch {}
+    }
     if (!dreamSessions.has(req.profileId)) {
       await openDreamSession(db, req.user, req.profileId);
     }
@@ -6815,14 +7054,29 @@ app.post('/api/workspace/read-letter', async (req, res) => {
           throw new Error('Dream opened a different page instead of this letter');
         }
         const hasReply = Boolean(String(letter.replyUrl || '').trim());
-        if (!letter.attachments?.length && (req.body?.attachmentHash || req.body?.videoAttachmentHash)) {
+        const fallbackPhotoHash = req.body?.hasPhoto === true ? cleanWorkspaceText(req.body?.msgHash || '') : '';
+        const fallbackVideoHash = req.body?.hasVideo === true ? cleanWorkspaceText(req.body?.msgHash || '') : '';
+        if (!letter.attachments?.length && (req.body?.attachmentHash || req.body?.videoAttachmentHash || fallbackPhotoHash || fallbackVideoHash)) {
           const hashAttachments = await resolveWorkspaceHistoryAttachments(req.profileId, {
-            attachmentHash: req.body?.attachmentHash,
-            videoAttachmentHash: req.body?.videoAttachmentHash,
+            attachmentHash: req.body?.attachmentHash || fallbackPhotoHash,
+            videoAttachmentHash: req.body?.videoAttachmentHash || fallbackVideoHash,
             msgId: req.body?.msgId,
             msgHash: req.body?.msgHash
           }, page.url || candidateUrl.href);
           if (hashAttachments.length) letter.attachments = hashAttachments;
+        }
+        if (!letter.attachments?.length && (req.body?.hasPhoto === true || req.body?.hasVideo === true || savedLetter?.attachmentsHint === true)) {
+          const browserAttachments = await captureWorkspaceLetterMediaFromBrowser(
+            db,
+            req.user,
+            req.profileId,
+            page.url || candidateUrl.href,
+            workspaceMessageIdentity(candidateUrl.href) || workspaceMessageIdentity(page.url || '') || ''
+          );
+          if (browserAttachments.length) letter.attachments = browserAttachments;
+        }
+        if (!letter.attachments?.length && savedLetter?.attachments?.length) {
+          letter.attachments = cleanWorkspaceAttachments(savedLetter.attachments);
         }
         if (letter.attachments?.length) {
           const cacheKey = workspaceMessageIdentity(candidateUrl.href) ||
@@ -8006,6 +8260,7 @@ async function startServer() {
   try {
     await initializeDatabase();
     migrateDatabase();
+    startWorkspaceAttachmentCacheCleanup();
     app.listen(PORT, () => {
       console.log(`Dream Local CRM is running: http://localhost:${PORT}`);
     });
