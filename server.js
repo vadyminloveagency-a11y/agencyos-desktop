@@ -3670,8 +3670,6 @@ function collectWorkspaceLetterHtml(html = '', sourceUrl = DREAM_INBOX_URL, fall
     extractElementById(html, 'senderMsg') ||
     extractElementById(html, 'mailBody') ||
     extractElementById(html, 'mainMess') ||
-    extractElementById(html, 'messageHistory') ||
-    extractElementById(html, 'message_history') ||
     extractElementsByClassName(html, 'letter-body')[0] ||
     extractElementsByClassName(html, 'read_message')[0] ||
     extractElementsByClassName(html, 'message-item')[0] ||
@@ -3790,6 +3788,34 @@ function collectWorkspaceLetterHtml(html = '', sourceUrl = DREAM_INBOX_URL, fall
       text: bodyText
     }] : []
   };
+}
+
+function compactLetterMatchText(value = '') {
+  return cleanWorkspaceText(value)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+}
+
+function workspaceLetterLooksLikeWrongDreamPage(letter = {}, expected = {}) {
+  const body = String(letter.bodyText || '').trim();
+  if (!body) return false;
+  const requestPhotoCount = (body.match(/\bRequest Photo\b/gi) || []).length;
+  const replyLineCount = (body.match(/\bThis is a reply to your message sent on\b/gi) || []).length;
+  const idLineCount = (body.match(/^\s*\d{4,}\s*$/gm) || []).length;
+  const dateLineCount = (body.match(/^\s*20\d{2}-\d{2}-\d{2}\s*$/gm) || []).length;
+  if (requestPhotoCount >= 3 || replyLineCount >= 3 || idLineCount >= 5 || dateLineCount >= 5) return true;
+
+  const expectedText = compactLetterMatchText(expected.text || '');
+  if (expectedText.length >= 30) {
+    const actualText = compactLetterMatchText([
+      body,
+      ...(Array.isArray(letter.conversation) ? letter.conversation.map(item => item?.text || '') : [])
+    ].join('\n'));
+    const expectedNeedle = expectedText.slice(0, Math.min(120, expectedText.length));
+    if (!actualText.includes(expectedNeedle)) return true;
+  }
+  return false;
 }
 
 function workspaceHistoryAttachmentUrlCandidates(meta = {}, sourceUrl = DREAM_INBOX_URL) {
@@ -6782,6 +6808,12 @@ app.post('/api/workspace/read-letter', async (req, res) => {
         );
         if (!requireLive) letter = mergeSavedWorkspaceLetterDetails(letter, savedLetter);
         if (letter.requiresLogin) throw new Error('Dream Singles login is required');
+        if (requireLive && workspaceLetterLooksLikeWrongDreamPage(letter, {
+          text: req.body?.expectedText || '',
+          dateText: req.body?.expectedDateText || ''
+        })) {
+          throw new Error('Dream opened a different page instead of this letter');
+        }
         const hasReply = Boolean(String(letter.replyUrl || '').trim());
         if (!letter.attachments?.length && (req.body?.attachmentHash || req.body?.videoAttachmentHash)) {
           const hashAttachments = await resolveWorkspaceHistoryAttachments(req.profileId, {

@@ -2806,7 +2806,7 @@ async function loadWorkspaceHistoryLetterDetails(entry, group, options = {}) {
     : [];
   if (messageLink && !messageLinks.includes(messageLink)) messageLinks.unshift(messageLink);
   if (!historyKey || !messageLinks.length || entry?.liveLoading || (entry?.liveLetter && !force)) return null;
-  updateWorkspaceHistoryEntry(group, historyKey, { liveLoading: true, liveError: '' });
+  updateWorkspaceHistoryEntry(group, historyKey, { liveLoading: true, liveError: '', liveLetter: null });
   renderDialog(group);
   try {
     const response = await apiFetch('/api/workspace/read-letter', {
@@ -2822,6 +2822,8 @@ async function loadWorkspaceHistoryLetterDetails(entry, group, options = {}) {
         videoAttachmentHash: entry.videoAttachmentHash || '',
         msgId: entry.msgId || '',
         msgHash: entry.msgHash || '',
+        expectedText: entry.text || '',
+        expectedDateText: entry.dateText || '',
         id: group?.id || '',
         name: group?.name || '',
         direction: entry.direction === 'outgoing' ? 'outgoing' : 'incoming'
@@ -3515,6 +3517,33 @@ async function openWorkspaceInbox(button = inboxFilterBtn, options = {}) {
   }
 }
 
+async function ensureWorkspaceInboxAfterConnect(options = {}) {
+  if (!activeProfileId || !isWorkspaceLadyConnected() || workspaceListFilter !== 'inbox') return;
+  const attempts = Math.max(1, Number(options.attempts || 3) || 3);
+  const beforeLetters = [...workspaceLetters];
+  workspaceInboxListLoading = true;
+  workspaceListLoadingFilter = 'inbox';
+  renderCurrentWorkspaceState();
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      setWorkspaceActionStatus(`Opening inbox${attempt > 1 ? `, retry ${attempt}` : ''}`);
+      await scanAndSaveInbox(WORKSPACE_INBOX_AUTH_REFRESH_PAGES, { mergeOnly: true, limitRows: false, limitLetters: false });
+      await reloadWorkspaceInbox();
+      if (workspaceLetters.length || attempt === attempts) break;
+      await new Promise(resolve => setTimeout(resolve, 800 * attempt));
+    } catch (error) {
+      console.warn(`Could not open inbox after connection, attempt ${attempt}`, error);
+      if (attempt === attempts) await reloadWorkspaceInbox().catch(() => {});
+      else await new Promise(resolve => setTimeout(resolve, 800 * attempt));
+    }
+  }
+  if (hasNewIncomingActivity(beforeLetters, workspaceLetters)) playInboxNewMessageSound();
+  workspaceInboxListLoading = false;
+  if (workspaceListLoadingFilter === 'inbox') workspaceListLoadingFilter = '';
+  setWorkspaceActionStatus('');
+  renderCurrentWorkspaceState();
+}
+
 async function scanWorkspaceInboxBackground() {
   if (!activeProfileId || !isWorkspaceLadyConnected()) return;
   if (workspaceInboxBackgroundScanning || workspaceInboxListLoading || workspaceListLoadingFilter) return;
@@ -3565,9 +3594,7 @@ async function loadWorkspace() {
     const result = await apiFetch('/api/workspace/inbox');
     workspaceLetters = result.letters || [];
     renderList();
-    if (workspaceListFilter === 'inbox') {
-      await openWorkspaceInbox(inboxFilterBtn, { authRefresh: true });
-    }
+    if (workspaceListFilter === 'inbox') await ensureWorkspaceInboxAfterConnect();
     startWorkspaceInboxBackgroundScan();
     const group = findGroup(workspaceSelectedId);
     if (group) {
@@ -4779,7 +4806,7 @@ window.addEventListener('storage', event => {
   if (event.key === `dream_team_lady_connected_${activeProfileId}`) {
     updateWorkspaceConnectionToggle();
     if (event.newValue === '1' && workspaceListFilter === 'inbox') {
-      openWorkspaceInbox(inboxFilterBtn, { authRefresh: true }).catch(error => {
+      ensureWorkspaceInboxAfterConnect().catch(error => {
         console.warn('Could not refresh inbox after connection storage event', error);
       });
     }
