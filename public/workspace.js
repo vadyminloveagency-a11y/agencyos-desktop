@@ -2811,6 +2811,10 @@ async function loadWorkspaceHistoryLetterDetails(entry, group, options = {}) {
         messageLinks,
         requireLive: true,
         requireReplyUrl: entry.direction !== 'outgoing',
+        attachmentHash: entry.attachmentHash || '',
+        videoAttachmentHash: entry.videoAttachmentHash || '',
+        msgId: entry.msgId || '',
+        msgHash: entry.msgHash || '',
         id: group?.id || '',
         name: group?.name || '',
         direction: entry.direction === 'outgoing' ? 'outgoing' : 'incoming'
@@ -3554,7 +3558,7 @@ async function loadWorkspace() {
     const result = await apiFetch('/api/workspace/inbox');
     workspaceLetters = result.letters || [];
     renderList();
-    if (workspaceAutoloadInbox) {
+    if (workspaceListFilter === 'inbox') {
       await openWorkspaceInbox(inboxFilterBtn, { authRefresh: true });
     }
     startWorkspaceInboxBackgroundScan();
@@ -4765,6 +4769,13 @@ document.addEventListener('keydown', event => {
 installWorkspaceThemeToggle();
 updateWorkspaceConnectionToggle();
 window.addEventListener('storage', event => {
-  if (event.key === `dream_team_lady_connected_${activeProfileId}`) updateWorkspaceConnectionToggle();
+  if (event.key === `dream_team_lady_connected_${activeProfileId}`) {
+    updateWorkspaceConnectionToggle();
+    if (event.newValue === '1' && workspaceListFilter === 'inbox') {
+      openWorkspaceInbox(inboxFilterBtn, { authRefresh: true }).catch(error => {
+        console.warn('Could not refresh inbox after connection storage event', error);
+      });
+    }
+  }
 });
 loadWorkspace();

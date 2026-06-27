@@ -568,7 +568,7 @@ function workspaceAttachmentFileName(profileId, letterKey, index, attachment, co
   return `${String(profileId || 'profile').replace(/[^\w-]/g, '_')}/${String(letterKey || 'letter').replace(/[^\w-]/g, '_').slice(0, 80)}/${index + 1}-${hash}${workspaceAttachmentExtension(attachment, contentType)}`;
 }
 
-async function cacheWorkspaceAttachments(profileId, letterKey, attachments = []) {
+async function cacheWorkspaceAttachments(profileId, letterKey, attachments = [], jar = null) {
   const clean = cleanWorkspaceAttachments(attachments);
   const cached = [];
 
@@ -581,7 +581,11 @@ async function cacheWorkspaceAttachments(profileId, letterKey, attachments = [])
 
     const sourceUrl = attachment.sourceUrl || attachment.url;
     try {
-      const response = await fetch(sourceUrl);
+      const response = jar
+        ? await agencyFetch(sourceUrl, {
+            headers: { Accept: attachment.type === 'video' ? 'video/*,*/*;q=0.8' : 'image/*,*/*;q=0.8' }
+          }, jar)
+        : await fetch(sourceUrl);
       const contentType = response.headers.get('content-type') || '';
       const length = Number(response.headers.get('content-length') || 0);
       const maxBytes = attachment.type === 'video' ? 80 * 1024 * 1024 : 12 * 1024 * 1024;
@@ -3788,6 +3792,79 @@ function collectWorkspaceLetterHtml(html = '', sourceUrl = DREAM_INBOX_URL, fall
   };
 }
 
+function workspaceHistoryAttachmentUrlCandidates(meta = {}, sourceUrl = DREAM_INBOX_URL) {
+  const hashes = [
+    { type: 'image', hash: cleanWorkspaceText(meta.attachmentHash || meta.attachment_hash || '') },
+    { type: 'video', hash: cleanWorkspaceText(meta.videoAttachmentHash || meta.video_attachment_hash || '') }
+  ].filter(item => item.hash);
+  const msgId = cleanWorkspaceText(meta.msgId || meta.msg_id || '');
+  const msgHash = cleanWorkspaceText(meta.msgHash || meta.msg_hash || '');
+  const pathsFor = (hash, type) => [
+    `/members/messaging/attachment/${encodeURIComponent(hash)}`,
+    `/members/messaging/downloadAttachment/${encodeURIComponent(hash)}`,
+    `/members/messaging/getAttachment/${encodeURIComponent(hash)}`,
+    `/members/messaging/viewAttachment/${encodeURIComponent(hash)}`,
+    `/members/messaging/showAttachment/${encodeURIComponent(hash)}`,
+    `/members/messaging/messageAttachment/${encodeURIComponent(hash)}`,
+    `/members/messaging/getMessageAttachment/${encodeURIComponent(hash)}`,
+    `/members/messaging/${type === 'video' ? 'video' : 'photo'}Attachment/${encodeURIComponent(hash)}`,
+    `/members/messaging/attachment?hash=${encodeURIComponent(hash)}`,
+    `/members/messaging/downloadAttachment?hash=${encodeURIComponent(hash)}`,
+    `/members/messaging/getAttachment?hash=${encodeURIComponent(hash)}`,
+    msgId ? `/members/messaging/attachment/${encodeURIComponent(msgId)}/${encodeURIComponent(hash)}` : '',
+    msgId ? `/members/messaging/downloadAttachment/${encodeURIComponent(msgId)}/${encodeURIComponent(hash)}` : '',
+    msgHash ? `/members/messaging/attachment/${encodeURIComponent(msgHash)}/${encodeURIComponent(hash)}` : ''
+  ].filter(Boolean);
+  const seen = new Set();
+  return hashes.flatMap(item => pathsFor(item.hash, item.type).map(pathValue => ({
+    type: item.type,
+    url: absoluteDreamUrl(pathValue, sourceUrl),
+    hash: item.hash
+  }))).filter(item => {
+    if (!item.url || seen.has(item.url)) return false;
+    seen.add(item.url);
+    return true;
+  });
+}
+
+async function resolveWorkspaceHistoryAttachments(profileId, meta = {}, sourceUrl = DREAM_INBOX_URL) {
+  const session = dreamSessions.get(String(profileId || ''));
+  if (!session) return [];
+  const found = [];
+  const candidates = workspaceHistoryAttachmentUrlCandidates(meta, sourceUrl).slice(0, 20);
+  for (const candidate of candidates) {
+    try {
+      const response = await agencyFetch(candidate.url, {
+        headers: {
+          Accept: candidate.type === 'video' ? 'video/*,text/html,*/*;q=0.8' : 'image/*,text/html,*/*;q=0.8',
+          Referer: sourceUrl
+        },
+        timeoutMs: 20000
+      }, session.jar);
+      const contentType = response.headers.get('content-type') || '';
+      if (!response.ok) continue;
+      if (/image|video|octet-stream/i.test(contentType)) {
+        found.push({
+          type: /video/i.test(contentType) || candidate.type === 'video' ? 'video' : 'image',
+          url: response.url || candidate.url,
+          sourceUrl: response.url || candidate.url,
+          label: candidate.type === 'video' ? 'Video attachment' : 'Photo attachment'
+        });
+        continue;
+      }
+      if (/html|text/i.test(contentType)) {
+        const html = await response.text();
+        const parsed = collectWorkspaceLetterHtml(html, response.url || candidate.url, '', '', '');
+        if (Array.isArray(parsed.attachments) && parsed.attachments.length) {
+          found.push(...parsed.attachments);
+        }
+      }
+    } catch {}
+    if (found.length) break;
+  }
+  return cleanWorkspaceAttachments(found);
+}
+
 function extractWorkspaceMessageHistoryCandidates(html = '') {
   const candidates = [];
   const addCandidate = (value = '') => {
@@ -6705,9 +6782,23 @@ app.post('/api/workspace/read-letter', async (req, res) => {
         );
         if (!requireLive) letter = mergeSavedWorkspaceLetterDetails(letter, savedLetter);
         if (letter.requiresLogin) throw new Error('Dream Singles login is required');
-        const hasContent = Boolean(letter.bodyText || letter.conversation?.length || letter.attachments?.length);
         const hasReply = Boolean(String(letter.replyUrl || '').trim());
-        if (hasContent && (!requireReplyUrl || hasReply)) {
+        if (!letter.attachments?.length && (req.body?.attachmentHash || req.body?.videoAttachmentHash)) {
+          const hashAttachments = await resolveWorkspaceHistoryAttachments(req.profileId, {
+            attachmentHash: req.body?.attachmentHash,
+            videoAttachmentHash: req.body?.videoAttachmentHash,
+            msgId: req.body?.msgId,
+            msgHash: req.body?.msgHash
+          }, page.url || candidateUrl.href);
+          if (hashAttachments.length) letter.attachments = hashAttachments;
+        }
+        if (letter.attachments?.length) {
+          const cacheKey = workspaceMessageIdentity(candidateUrl.href) ||
+            crypto.createHash('sha1').update(candidateUrl.href).digest('hex').slice(0, 16);
+          letter.attachments = await cacheWorkspaceAttachments(req.profileId, cacheKey, letter.attachments, dreamSessions.get(String(req.profileId || ''))?.jar || null);
+        }
+        const hasLiveContent = Boolean(letter.bodyText || letter.conversation?.length || letter.attachments?.length);
+        if (hasLiveContent && (!requireReplyUrl || hasReply)) {
           return res.json({
             ok: true,
             letter: {
@@ -6718,7 +6809,7 @@ app.post('/api/workspace/read-letter', async (req, res) => {
             }
           });
         }
-        if (hasContent && !bestLetter) {
+        if (hasLiveContent && !bestLetter) {
           bestLetter = {
             ...letter,
             messageLink: candidateUrl.href,
