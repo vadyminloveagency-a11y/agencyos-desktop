@@ -24,6 +24,9 @@ const PHOTOS_DIR = process.env.DREAM_TEAM_PHOTOS_DIR || (USING_RUNTIME_DATA_DIR 
 const WORKSPACE_ATTACHMENTS_DIR = process.env.DREAM_TEAM_WORKSPACE_ATTACHMENTS_DIR || (USING_RUNTIME_DATA_DIR ? path.join(DATA_DIR, 'workspace-attachments') : path.join(__dirname, 'public', 'workspace-attachments'));
 const ALLOWED_PROFILES_PATH = process.env.DREAM_TEAM_ALLOWED_PROFILES_PATH || path.join(DATA_DIR, 'allowed_profiles.json');
 const CREDENTIAL_KEY_PATH = process.env.DREAM_TEAM_CREDENTIAL_KEY_PATH || path.join(DATA_DIR, '.credential-key');
+const DATABASE_URL = process.env.DATABASE_URL || process.env.POSTGRES_URL || '';
+const USE_POSTGRES = Boolean(DATABASE_URL);
+const POSTGRES_DOCUMENT_KEY = 'main';
 const launchTokens = new Map();
 const extensionTokens = new Map();
 const dreamSessions = new Map();
@@ -34,6 +37,7 @@ let dbCacheMtimeMs = 0;
 let dbWriteTimer = null;
 let dbWriteInFlight = Promise.resolve();
 let dbDirty = false;
+let pgPool = null;
 const DREAM_LOGIN_URL = 'https://www.dream-singles.com/login';
 const DREAM_INBOX_URL = 'https://www.dream-singles.com/members/messaging/inbox';
 const DREAM_ACCOUNT_URL = 'https://www.dream-singles.com/members/account/';
@@ -97,7 +101,12 @@ app.use(express.static(path.join(__dirname, 'public'), {
 }));
 
 app.get('/api/health', (req, res) => {
-  res.json({ ok: true, service: 'dream-team', time: new Date().toISOString() });
+  res.json({
+    ok: true,
+    service: 'dream-team',
+    storage: USE_POSTGRES ? 'postgres' : 'file',
+    time: new Date().toISOString()
+  });
 });
 
 function getDefaultProfileId() {
@@ -278,26 +287,99 @@ function dbFileMtimeMs() {
   }
 }
 
+function readFileDb() {
+  if (!fs.existsSync(DB_PATH)) return { db: emptyDb(), mtimeMs: 0 };
+  const db = normalizeDb(JSON.parse(fs.readFileSync(DB_PATH, 'utf8')));
+  return { db, mtimeMs: dbFileMtimeMs() };
+}
+
+function postgresSslConfig() {
+  if (process.env.PGSSLMODE === 'disable' || /localhost|127\.0\.0\.1/i.test(DATABASE_URL)) return false;
+  return { rejectUnauthorized: false };
+}
+
+async function connectPostgres() {
+  if (!USE_POSTGRES || pgPool) return pgPool;
+  const { Pool } = await import('pg');
+  pgPool = new Pool({
+    connectionString: DATABASE_URL,
+    ssl: postgresSslConfig()
+  });
+  pgPool.on('error', error => {
+    console.error('PostgreSQL pool error:', error);
+  });
+  await pgPool.query(`
+    create table if not exists agencyos_documents (
+      key text primary key,
+      data jsonb not null,
+      updated_at timestamptz not null default now()
+    )
+  `);
+  return pgPool;
+}
+
+async function readPostgresDb() {
+  const pool = await connectPostgres();
+  const result = await pool.query('select data from agencyos_documents where key = $1', [POSTGRES_DOCUMENT_KEY]);
+  if (result.rows[0]?.data) return normalizeDb(result.rows[0].data);
+
+  let initialDb = emptyDb();
+  if (fs.existsSync(DB_PATH)) {
+    try {
+      initialDb = readFileDb().db;
+      console.log(`Imported initial database from ${DB_PATH} into PostgreSQL.`);
+    } catch (error) {
+      console.error(`Could not import ${DB_PATH} into PostgreSQL: ${error.message}`);
+    }
+  }
+  await pool.query(
+    `insert into agencyos_documents (key, data, updated_at)
+     values ($1, $2::jsonb, now())
+     on conflict (key) do nothing`,
+    [POSTGRES_DOCUMENT_KEY, JSON.stringify(initialDb)]
+  );
+  const seeded = await pool.query('select data from agencyos_documents where key = $1', [POSTGRES_DOCUMENT_KEY]);
+  return normalizeDb(seeded.rows[0]?.data || initialDb);
+}
+
+async function initializeDatabase() {
+  if (USE_POSTGRES) {
+    dbCache = await readPostgresDb();
+    dbCacheMtimeMs = 0;
+    console.log('AgencyOS database storage: PostgreSQL');
+    return;
+  }
+  try {
+    const fileDb = readFileDb();
+    dbCache = fileDb.db;
+    dbCacheMtimeMs = fileDb.mtimeMs;
+  } catch {
+    dbCache = emptyDb();
+    dbCacheMtimeMs = 0;
+  }
+  console.log(`AgencyOS database storage: file ${DB_PATH}`);
+}
+
 function readDb() {
+  if (USE_POSTGRES) {
+    if (!dbCache) dbCache = emptyDb();
+    return dbCache;
+  }
   if (dbCache) {
     const fileMtimeMs = dbFileMtimeMs();
     if (!dbDirty && !dbWriteTimer && fileMtimeMs && fileMtimeMs !== dbCacheMtimeMs) {
       try {
-        dbCache = normalizeDb(JSON.parse(fs.readFileSync(DB_PATH, 'utf8')));
-        dbCacheMtimeMs = fileMtimeMs;
+        const fileDb = readFileDb();
+        dbCache = fileDb.db;
+        dbCacheMtimeMs = fileDb.mtimeMs;
       } catch {}
     }
     return dbCache;
   }
-  if (!fs.existsSync(DB_PATH)) {
-    dbCache = emptyDb();
-    dbCacheMtimeMs = 0;
-    return dbCache;
-  }
-
   try {
-    dbCache = normalizeDb(JSON.parse(fs.readFileSync(DB_PATH, 'utf8')));
-    dbCacheMtimeMs = dbFileMtimeMs();
+    const fileDb = readFileDb();
+    dbCache = fileDb.db;
+    dbCacheMtimeMs = fileDb.mtimeMs;
     return dbCache;
   } catch {
     dbCache = emptyDb();
@@ -307,6 +389,11 @@ function readDb() {
 }
 
 function writeDbSync(db) {
+  if (USE_POSTGRES) {
+    dbCache = db;
+    dbDirty = true;
+    return;
+  }
   fs.mkdirSync(path.dirname(DB_PATH), { recursive: true });
   const tempPath = `${DB_PATH}.tmp`;
   fs.writeFileSync(tempPath, JSON.stringify(db, null, 2), 'utf8');
@@ -322,15 +409,25 @@ function flushQueuedDb() {
 
   dbWriteInFlight = dbWriteInFlight
     .then(async () => {
-      await fs.promises.mkdir(path.dirname(DB_PATH), { recursive: true });
-      const tempPath = `${DB_PATH}.tmp`;
-      await fs.promises.writeFile(tempPath, JSON.stringify(snapshot, null, 2), 'utf8');
-      await fs.promises.rename(tempPath, DB_PATH);
-      dbCacheMtimeMs = dbFileMtimeMs();
+      if (USE_POSTGRES) {
+        const pool = await connectPostgres();
+        await pool.query(
+          `insert into agencyos_documents (key, data, updated_at)
+           values ($1, $2::jsonb, now())
+           on conflict (key) do update set data = excluded.data, updated_at = now()`,
+          [POSTGRES_DOCUMENT_KEY, JSON.stringify(snapshot)]
+        );
+      } else {
+        await fs.promises.mkdir(path.dirname(DB_PATH), { recursive: true });
+        const tempPath = `${DB_PATH}.tmp`;
+        await fs.promises.writeFile(tempPath, JSON.stringify(snapshot, null, 2), 'utf8');
+        await fs.promises.rename(tempPath, DB_PATH);
+        dbCacheMtimeMs = dbFileMtimeMs();
+      }
     })
     .catch(error => {
       dbDirty = true;
-      console.error('Could not save database:', error);
+      console.error(`Could not save database to ${USE_POSTGRES ? 'PostgreSQL' : 'file'}:`, error);
     })
     .finally(() => {
       if (dbDirty && !dbWriteTimer) dbWriteTimer = setTimeout(flushQueuedDb, 150);
@@ -345,6 +442,10 @@ function writeDb(db) {
 
 function flushDbBeforeExit() {
   if (!dbCache || !dbDirty) return;
+  if (USE_POSTGRES) {
+    console.warn('PostgreSQL database has pending writes during shutdown.');
+    return;
+  }
   try {
     writeDbSync(dbCache);
     dbDirty = false;
@@ -7665,8 +7766,17 @@ app.delete('/api/men/:id', (req, res) => {
   res.json({ ok: true });
 });
 
-migrateDatabase();
+async function startServer() {
+  try {
+    await initializeDatabase();
+    migrateDatabase();
+    app.listen(PORT, () => {
+      console.log(`Dream Local CRM is running: http://localhost:${PORT}`);
+    });
+  } catch (error) {
+    console.error('Could not start AgencyOS server:', error);
+    process.exit(1);
+  }
+}
 
-app.listen(PORT, () => {
-  console.log(`Dream Local CRM is running: http://localhost:${PORT}`);
-});
+startServer();
