@@ -736,6 +736,10 @@ ipcMain.handle('agency:install-update', async () => {
       return { ok: true, hasUpdate: false, currentVersion, latestVersion: latestVersion || currentVersion, message: 'No updates available.' };
     }
     await autoUpdater.downloadUpdate();
+    await Promise.race([
+      logoutKnownDreamProfiles('update-install'),
+      new Promise(resolve => setTimeout(resolve, 30000))
+    ]);
     dreamLogoutBeforeQuitDone = true;
     setImmediate(() => autoUpdater.quitAndInstall(false, true));
     return { ok: true, hasUpdate: true, currentVersion, latestVersion, message: `Installing update v${latestVersion}...` };
