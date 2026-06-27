@@ -1752,6 +1752,9 @@ function normalizeWorkspaceHistoryEntries(entries = [], group = {}) {
         hasPhoto: item?.hasPhoto === true || Boolean(attachmentHash),
         hasVideo: item?.hasVideo === true || Boolean(videoAttachmentHash),
         historyUrl: String(item?.historyUrl || '').trim(),
+        historyUrls: Array.isArray(item?.historyUrls)
+          ? item.historyUrls.map(url => String(url || '').trim()).filter(Boolean)
+          : [],
         liveLetter: item?.liveLetter || null,
         liveLoading: item?.liveLoading === true,
         liveError: String(item?.liveError || '').trim(),
@@ -1986,13 +1989,15 @@ function canReplyToLetter(letter) {
 }
 
 function historyEntryReplyLetter(entry, group) {
-  if (!entry || entry.direction === 'outgoing' || !entry.historyUrl) return null;
+  if (!entry || entry.direction === 'outgoing' || !entry.liveLetter || entry.liveError) return null;
+  const messageLink = String(entry.liveLetter.replyUrl || entry.liveLetter.messageLink || '').trim();
+  if (!messageLink) return null;
   return {
     key: `history-reply:${entry.key}`,
     id: group?.id || entry.senderId || '',
     name: group?.name || entry.author || '',
     direction: 'incoming',
-    messageLink: entry.liveLetter?.replyUrl || entry.liveLetter?.messageLink || entry.historyUrl,
+    messageLink,
     dateText: entry.dateText || '',
     bodyText: entry.liveLetter?.bodyText || entry.text || '',
     conversation: entry.liveLetter?.conversation || [],
@@ -2785,10 +2790,15 @@ function updateWorkspaceHistoryEntry(group, historyKey, patch = {}) {
   return updated;
 }
 
-async function loadWorkspaceHistoryLetterDetails(entry, group) {
+async function loadWorkspaceHistoryLetterDetails(entry, group, options = {}) {
+  const force = options.force === true;
   const historyKey = String(entry?.key || '');
   const messageLink = String(entry?.historyUrl || '').trim();
-  if (!historyKey || !messageLink || entry?.liveLetter || entry?.liveLoading) return null;
+  const messageLinks = Array.isArray(entry?.historyUrls)
+    ? entry.historyUrls.map(url => String(url || '').trim()).filter(Boolean)
+    : [];
+  if (messageLink && !messageLinks.includes(messageLink)) messageLinks.unshift(messageLink);
+  if (!historyKey || !messageLinks.length || entry?.liveLoading || (entry?.liveLetter && !force)) return null;
   updateWorkspaceHistoryEntry(group, historyKey, { liveLoading: true, liveError: '' });
   renderDialog(group);
   try {
@@ -2797,7 +2807,10 @@ async function loadWorkspaceHistoryLetterDetails(entry, group) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         sourceProfileId: activeProfileId,
-        messageLink,
+        messageLink: messageLinks[0],
+        messageLinks,
+        requireLive: true,
+        requireReplyUrl: entry.direction !== 'outgoing',
         id: group?.id || '',
         name: group?.name || '',
         direction: entry.direction === 'outgoing' ? 'outgoing' : 'incoming'
@@ -2805,7 +2818,7 @@ async function loadWorkspaceHistoryLetterDetails(entry, group) {
     }, 70000);
     const liveLetter = {
       ...(response.letter || {}),
-      messageLink,
+      messageLink: response.letter?.replyUrl || response.letter?.messageLink || response.letter?.resolvedUrl || messageLinks[0],
       direction: entry.direction === 'outgoing' ? 'outgoing' : 'incoming'
     };
     updateWorkspaceHistoryEntry(group, historyKey, {
@@ -3152,7 +3165,7 @@ function renderDialog(group) {
 async function loadSelectedLetterBody() {
   const group = findGroup(workspaceSelectedId);
   const letter = selectedLetterFromGroup(group);
-  await loadWorkspaceLetterDetails(letter, group, { render: true });
+  await loadWorkspaceLetterDetails(letter, group, { render: true, force: true, requireLive: true });
 }
 
 async function loadWorkspaceLetterDetails(letter, group, options = {}) {
@@ -3178,6 +3191,7 @@ async function loadWorkspaceLetterDetails(letter, group, options = {}) {
       body: JSON.stringify({
         sourceProfileId: activeProfileId,
         messageLink: letter.messageLink,
+        requireLive: options.requireLive === true,
         id: letter.id || group?.id || '',
         name: letter.name || group?.name || '',
         direction: letter.direction === 'outgoing' ? 'outgoing' : 'incoming'
@@ -3191,7 +3205,9 @@ async function loadWorkspaceLetterDetails(letter, group, options = {}) {
         key,
         transient: true,
         messageLink: responseLetter.replyUrl || responseLetter.messageLink || letter.messageLink,
-        attachments: responseLetter.attachments || letter.attachments || [],
+        attachments: Array.isArray(responseLetter.attachments)
+          ? responseLetter.attachments
+          : (options.requireLive === true ? [] : (letter.attachments || [])),
         attachmentsChecked: true
       };
       updateLetterInMemory(liveLetter);
@@ -3205,6 +3221,7 @@ async function loadWorkspaceLetterDetails(letter, group, options = {}) {
         key,
         letter: {
           ...responseLetter,
+          liveRefresh: options.requireLive === true,
           messageLink: responseLetter.replyUrl || responseLetter.messageLink || letter.messageLink
         }
       })
@@ -4322,7 +4339,9 @@ dialog.addEventListener('click', event => {
     rememberSelectedDialog();
     renderDialog(group);
     const entry = selectedHistoryEntryForGroup(group);
-    if (entry?.historyUrl) loadWorkspaceHistoryLetterDetails(entry, group);
+    if (entry?.historyUrl || (Array.isArray(entry?.historyUrls) && entry.historyUrls.length)) {
+      loadWorkspaceHistoryLetterDetails(entry, group, { force: true });
+    }
     return;
   }
   const button = event.target.closest('.workspace-letter-card');
