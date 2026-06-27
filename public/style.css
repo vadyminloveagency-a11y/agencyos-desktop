@@ -27389,7 +27389,7 @@ body.mandarin-home-active.agency-panel-inbox:not(.app-dark-theme) .agency-shell-
 body.mandarin-home-active.agency-panel-inbox:not(.app-dark-theme) .agency-inbox-panel,
 body.mandarin-home-active.agency-panel-inbox:not(.app-dark-theme) .agency-inbox-frame,
 body.mandarin-home-active.agency-panel-inbox:not(.app-dark-theme) #agencyInboxFrame {
-  background: #151311 !important;
+  background: #f8f6f3 !important;
 }
 
 /* Compact auth card: smaller first-screen login window at 100% zoom. */

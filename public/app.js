@@ -34,6 +34,17 @@ let ladyConnected = Boolean(activeProfileId) && localStorage.getItem(`dream_team
 let ladyDisconnectInProgress = false;
 let profileChoiceConnecting = false;
 const AGENCY_DESKTOP_CLIENT = Boolean(window.agencyElectron) || /Electron/i.test(navigator.userAgent || '');
+const AGENCY_DESKTOP_SESSION_KEY = 'agencyos_desktop_session_id';
+if (AGENCY_DESKTOP_CLIENT) {
+  const desktopSessionId = new URLSearchParams(window.location.search).get('desktopVersion') || 'desktop';
+  if (localStorage.getItem(AGENCY_DESKTOP_SESSION_KEY) !== desktopSessionId) {
+    Object.keys(localStorage)
+      .filter(key => key.startsWith('dream_team_lady_connected_'))
+      .forEach(key => localStorage.removeItem(key));
+    localStorage.setItem(AGENCY_DESKTOP_SESSION_KEY, desktopSessionId);
+  }
+  ladyConnected = Boolean(activeProfileId) && localStorage.getItem(`dream_team_lady_connected_${activeProfileId}`) === '1';
+}
 document.body.classList.toggle('agency-desktop-app', AGENCY_DESKTOP_CLIENT);
 document.body.classList.toggle('agency-web-client', !AGENCY_DESKTOP_CLIENT);
 if (!ladyConnected && !['stats', 'adminPanel', 'settings'].includes(currentView)) {
@@ -2140,17 +2151,26 @@ async function connectProfileById(profileId, options = {}) {
     const result = await serverProfileRequestFor(id, 'server-connect', {
       body: { syncInbox: options.syncInbox !== false, maxPages: options.maxPages || 3 }
     });
-    if (window.agencyElectron?.prepareDreamProfile) {
-      window.agencyElectron.prepareDreamProfile(id).catch(error => {
-        console.warn('Could not prepare Electron Dream profile:', error);
-      });
-    }
+    await prepareLocalDreamProfile(id);
     localStorage.setItem(`dream_team_lady_connected_${id}`, '1');
     return result;
   } finally {
     profileConnectingIds.delete(id);
     renderSidebarProfileDock();
   }
+}
+
+async function prepareLocalDreamProfile(profileId) {
+  const id = String(profileId || '');
+  if (!window.agencyElectron?.prepareDreamProfile) return true;
+  let lastError = '';
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    const result = await window.agencyElectron.prepareDreamProfile(id);
+    if (result?.ok !== false) return true;
+    lastError = result.error || 'Could not login this profile in Dream on this PC';
+    if (attempt < 3) await new Promise(resolve => setTimeout(resolve, 3500));
+  }
+  throw new Error(lastError || 'Could not login this profile in Dream on this PC');
 }
 
 async function switchWorkingProfile(profileId, options = {}) {
@@ -2185,14 +2205,17 @@ async function switchWorkingProfile(profileId, options = {}) {
 
 async function connectAllProfiles() {
   const previousProfileId = activeProfileId;
-  const errors = [];
-  for (const profile of availableProfiles) {
-    try {
-      await connectProfileById(profile.id, { syncInbox: false, maxPages: 1 });
-    } catch (error) {
-      errors.push(`${profile.name || profile.id}: ${error.message || error}`);
-    }
-  }
+  const results = await Promise.allSettled(
+    availableProfiles.map(profile =>
+      connectProfileById(profile.id, { syncInbox: false, maxPages: 1 })
+        .then(() => ({ profile }))
+    )
+  );
+  const errors = results
+    .map((result, index) => result.status === 'rejected'
+      ? `${availableProfiles[index]?.name || availableProfiles[index]?.id}: ${result.reason?.message || result.reason}`
+      : '')
+    .filter(Boolean);
   renderSidebarProfileDock();
   if (previousProfileId && availableProfiles.some(profile => profile.id === previousProfileId)) {
     await switchWorkingProfile(previousProfileId, { reason: 'connect-all' });
