@@ -27,7 +27,7 @@ function normalizeServerUrl(value = '') {
 function configuredRemoteServerUrl() {
   const envUrl = normalizeServerUrl(process.env.AGENCYOS_SERVER_URL || process.env.DREAM_TEAM_REMOTE_URL || '');
   if (envUrl) return envUrl;
-  if (process.env.AGENCYOS_USE_REMOTE === '1') return DEFAULT_REMOTE_SERVER_URL;
+  if (app.isPackaged || process.env.AGENCYOS_USE_REMOTE === '1') return DEFAULT_REMOTE_SERVER_URL;
   return '';
 }
 
