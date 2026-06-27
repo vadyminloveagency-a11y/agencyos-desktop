@@ -15,9 +15,46 @@ const dreamKeepAliveByProfile = new Map();
 const preparedDreamProfileIds = new Set();
 let logPath = '';
 let dreamLogoutBeforeQuitDone = false;
+let dreamLogoutBeforeQuitInProgress = false;
 let autoUpdaterConfigured = false;
 let updateInstallInProgress = false;
 const DEFAULT_REMOTE_SERVER_URL = 'https://agencyos-server-096a.onrender.com';
+
+function dreamPreparedProfilesPath() {
+  return path.join(app.getPath('userData'), 'dream-prepared-profiles.json');
+}
+
+function readPersistedDreamProfileIds() {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(dreamPreparedProfilesPath(), 'utf8'));
+    return Array.isArray(parsed?.ids) ? parsed.ids : [];
+  } catch {
+    return [];
+  }
+}
+
+function writePersistedDreamProfileIds() {
+  try {
+    const ids = [...preparedDreamProfileIds].map(id => String(id || '').trim()).filter(id => /^\d{4,}$/.test(id));
+    fs.writeFileSync(dreamPreparedProfilesPath(), JSON.stringify({ ids }, null, 2), 'utf8');
+  } catch (error) {
+    logElectronError('write-prepared-dream-profiles', error);
+  }
+}
+
+function rememberPreparedDreamProfile(profileId) {
+  const id = String(profileId || '').trim();
+  if (!/^\d{4,}$/.test(id)) return;
+  preparedDreamProfileIds.add(id);
+  writePersistedDreamProfileIds();
+}
+
+function forgetPreparedDreamProfile(profileId) {
+  const id = String(profileId || '').trim();
+  if (!id) return;
+  preparedDreamProfileIds.delete(id);
+  writePersistedDreamProfileIds();
+}
 
 function normalizeServerUrl(value = '') {
   const text = String(value || '').trim().replace(/\/+$/, '');
@@ -123,6 +160,7 @@ function dreamPartitionForProfile(profileId) {
 
 function knownDreamProfileIds() {
   const ids = new Set(preparedDreamProfileIds);
+  for (const id of readPersistedDreamProfileIds()) ids.add(String(id || ''));
   for (const id of dreamWindowByProfile.keys()) ids.add(String(id || ''));
   for (const id of dreamKeepAliveByProfile.keys()) ids.add(String(id || ''));
   try {
@@ -245,6 +283,7 @@ function createMainWindow(baseUrl) {
   mainWindow.on('closed', () => {
     logElectronInfo('main-window-closed');
     mainWindow = null;
+    if (!updateInstallInProgress) app.quit();
   });
 }
 
@@ -263,7 +302,7 @@ async function redeemLaunch(baseUrl, token) {
 
 async function seedDreamCookies(profileId, dreamCookies = []) {
   const partition = dreamPartitionForProfile(profileId);
-  if (String(profileId || '').trim()) preparedDreamProfileIds.add(String(profileId || '').trim());
+  rememberPreparedDreamProfile(profileId);
   const dreamSession = session.fromPartition(partition);
   for (const cookie of dreamCookies) {
     if (!cookie || !cookie.name || cookie.value == null) continue;
@@ -526,7 +565,7 @@ async function logoutDreamProfile(profileId, options = {}) {
   for (const cookie of cookies) {
     await dreamSession.cookies.remove('https://www.dream-singles.com', cookie.name).catch(() => {});
   }
-  preparedDreamProfileIds.delete(id);
+  forgetPreparedDreamProfile(id);
   logElectronInfo('logout-dream-profile-ok', label);
   return { ok: true, profileId: id };
 }
@@ -535,9 +574,9 @@ async function logoutKnownDreamProfiles(reason = '') {
   const ids = knownDreamProfileIds();
   if (!ids.length) return;
   logElectronInfo('logout-known-dream-profiles-start', `${ids.length}${reason ? ` ${reason}` : ''}`);
-  for (const id of ids) {
-    await logoutDreamProfile(id, { reason }).catch(error => logElectronError(`logout-known-dream-profile ${id}`, error));
-  }
+  await Promise.allSettled(ids.map(id =>
+    logoutDreamProfile(id, { reason }).catch(error => logElectronError(`logout-known-dream-profile ${id}`, error))
+  ));
   logElectronInfo('logout-known-dream-profiles-done', String(ids.length));
 }
 
@@ -758,14 +797,17 @@ app.whenReady().then(async () => {
 app.on('before-quit', event => {
   if (dreamLogoutBeforeQuitDone) return;
   event.preventDefault();
+  if (dreamLogoutBeforeQuitInProgress) return;
+  dreamLogoutBeforeQuitInProgress = true;
   logElectronInfo('before-quit-dream-logout-start');
   Promise.race([
     logoutKnownDreamProfiles('before-quit'),
-    new Promise(resolve => setTimeout(resolve, 12000))
+    new Promise(resolve => setTimeout(resolve, 30000))
   ]).catch(error => {
     logElectronError('before-quit-dream-logout', error);
   }).finally(() => {
     dreamLogoutBeforeQuitDone = true;
+    dreamLogoutBeforeQuitInProgress = false;
     logElectronInfo('before-quit-dream-logout-finish');
     app.quit();
   });
