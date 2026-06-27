@@ -10,11 +10,18 @@ const __dirname = path.dirname(__filename);
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-const DATA_DIR = process.env.DREAM_TEAM_DATA_DIR || __dirname;
+const WINDOWS_RUNTIME_DIR = process.platform === 'win32' && process.env.APPDATA
+  ? path.join(process.env.APPDATA, 'Electron')
+  : '';
+const DEFAULT_DATA_DIR = WINDOWS_RUNTIME_DIR && fs.existsSync(path.join(WINDOWS_RUNTIME_DIR, 'data.json'))
+  ? WINDOWS_RUNTIME_DIR
+  : __dirname;
+const DATA_DIR = process.env.DREAM_TEAM_DATA_DIR || DEFAULT_DATA_DIR;
+const USING_RUNTIME_DATA_DIR = path.resolve(DATA_DIR) !== path.resolve(__dirname);
 const DB_PATH = process.env.DREAM_TEAM_DB_PATH || path.join(DATA_DIR, 'data.json');
 const DB_BACKUP_PATH = process.env.DREAM_TEAM_DB_BACKUP_PATH || path.join(DATA_DIR, 'data.backup-before-profile-scope.json');
-const PHOTOS_DIR = process.env.DREAM_TEAM_PHOTOS_DIR || path.join(__dirname, 'public', 'photos');
-const WORKSPACE_ATTACHMENTS_DIR = process.env.DREAM_TEAM_WORKSPACE_ATTACHMENTS_DIR || path.join(__dirname, 'public', 'workspace-attachments');
+const PHOTOS_DIR = process.env.DREAM_TEAM_PHOTOS_DIR || (USING_RUNTIME_DATA_DIR ? path.join(DATA_DIR, 'photos') : path.join(__dirname, 'public', 'photos'));
+const WORKSPACE_ATTACHMENTS_DIR = process.env.DREAM_TEAM_WORKSPACE_ATTACHMENTS_DIR || (USING_RUNTIME_DATA_DIR ? path.join(DATA_DIR, 'workspace-attachments') : path.join(__dirname, 'public', 'workspace-attachments'));
 const ALLOWED_PROFILES_PATH = process.env.DREAM_TEAM_ALLOWED_PROFILES_PATH || path.join(DATA_DIR, 'allowed_profiles.json');
 const CREDENTIAL_KEY_PATH = process.env.DREAM_TEAM_CREDENTIAL_KEY_PATH || path.join(DATA_DIR, '.credential-key');
 const launchTokens = new Map();
@@ -23,6 +30,7 @@ const dreamSessions = new Map();
 const dreamHeartbeatTimers = new Map();
 const dreamBrowserSessions = new Map();
 let dbCache = null;
+let dbCacheMtimeMs = 0;
 let dbWriteTimer = null;
 let dbWriteInFlight = Promise.resolve();
 let dbDirty = false;
@@ -76,11 +84,11 @@ app.use('/workspace-attachments', express.static(WORKSPACE_ATTACHMENTS_DIR, {
 app.use(express.static(path.join(__dirname, 'public'), {
   setHeaders(res, filePath) {
     const ext = path.extname(filePath).toLowerCase();
-    if (ext === '.html') {
+    if (['.html', '.css', '.js'].includes(ext)) {
       res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
       return;
     }
-    if (['.css', '.js', '.png', '.jpg', '.jpeg', '.webp', '.svg', '.ico', '.mp3', '.woff', '.woff2'].includes(ext)) {
+    if (['.png', '.jpg', '.jpeg', '.webp', '.svg', '.ico', '.mp3', '.woff', '.woff2'].includes(ext)) {
       res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
       return;
     }
@@ -142,6 +150,10 @@ function salaryInfoForTotal(total, rates, feePercent = 0) {
 
 function emptyDb() {
   return { version: 4, profiles: {}, users: {}, sessions: {}, translator: {}, translationCache: {}, assignmentHistory: {}, agencyBonusLedger: {}, adminPanelCellColors: {}, adminPanelCellComments: {}, salaryRates: DEFAULT_SALARY_RATES, salaryFeePercent: 5 };
+}
+
+function currentMonthRegistrationDateIso(now = new Date()) {
+  return new Date(Date.UTC(now.getFullYear(), now.getMonth(), 1, 12, 0, 0)).toISOString();
 }
 
 function normalizeAdminPanelCellColors(value) {
@@ -230,7 +242,7 @@ function normalizeDb(raw) {
       name: `Profile ${profileId}`,
       active: true,
       men: raw.men,
-      createdAt: new Date().toISOString(),
+      createdAt: currentMonthRegistrationDateIso(),
       updatedAt: new Date().toISOString()
     };
   }
@@ -258,18 +270,38 @@ function removeEmptyPlaceholderMen(profile) {
   return removed;
 }
 
+function dbFileMtimeMs() {
+  try {
+    return fs.statSync(DB_PATH).mtimeMs || 0;
+  } catch {
+    return 0;
+  }
+}
+
 function readDb() {
-  if (dbCache) return dbCache;
+  if (dbCache) {
+    const fileMtimeMs = dbFileMtimeMs();
+    if (!dbDirty && !dbWriteTimer && fileMtimeMs && fileMtimeMs !== dbCacheMtimeMs) {
+      try {
+        dbCache = normalizeDb(JSON.parse(fs.readFileSync(DB_PATH, 'utf8')));
+        dbCacheMtimeMs = fileMtimeMs;
+      } catch {}
+    }
+    return dbCache;
+  }
   if (!fs.existsSync(DB_PATH)) {
     dbCache = emptyDb();
+    dbCacheMtimeMs = 0;
     return dbCache;
   }
 
   try {
     dbCache = normalizeDb(JSON.parse(fs.readFileSync(DB_PATH, 'utf8')));
+    dbCacheMtimeMs = dbFileMtimeMs();
     return dbCache;
   } catch {
     dbCache = emptyDb();
+    dbCacheMtimeMs = 0;
     return dbCache;
   }
 }
@@ -279,6 +311,7 @@ function writeDbSync(db) {
   const tempPath = `${DB_PATH}.tmp`;
   fs.writeFileSync(tempPath, JSON.stringify(db, null, 2), 'utf8');
   fs.renameSync(tempPath, DB_PATH);
+  dbCacheMtimeMs = dbFileMtimeMs();
 }
 
 function flushQueuedDb() {
@@ -293,6 +326,7 @@ function flushQueuedDb() {
       const tempPath = `${DB_PATH}.tmp`;
       await fs.promises.writeFile(tempPath, JSON.stringify(snapshot, null, 2), 'utf8');
       await fs.promises.rename(tempPath, DB_PATH);
+      dbCacheMtimeMs = dbFileMtimeMs();
     })
     .catch(error => {
       dbDirty = true;
@@ -344,6 +378,73 @@ function cleanWorkspaceAttachments(value) {
     })
     .filter(Boolean)
     .slice(0, 12);
+}
+
+function workspaceMessageIdentity(value = '') {
+  try {
+    const url = new URL(String(value || ''), DREAM_INBOX_URL);
+    const match = decodeURIComponent(url.pathname).match(/\/members\/messaging\/read\/([^/?#]+)/i);
+    if (match?.[1]) return match[1].toLowerCase();
+  } catch {}
+  return '';
+}
+
+function findSavedWorkspaceLetterByMessageLink(db, profileId = '', rawUrl = '') {
+  const identity = workspaceMessageIdentity(rawUrl);
+  if (!identity) return null;
+  const letters = db?.profiles?.[String(profileId || '')]?.workspaceInbox;
+  if (!Array.isArray(letters)) return null;
+  return letters.find(letter => workspaceMessageIdentity(letter?.messageLink) === identity && (
+    String(letter?.bodyText || '').trim() ||
+    (Array.isArray(letter?.conversation) && letter.conversation.length) ||
+    (Array.isArray(letter?.attachments) && letter.attachments.length)
+  )) || null;
+}
+
+function mergeSavedWorkspaceLetterDetails(liveLetter = {}, savedLetter = null) {
+  if (!savedLetter) return liveLetter;
+  const savedAttachments = cleanWorkspaceAttachments(savedLetter.attachments || []);
+  const liveAttachments = cleanWorkspaceAttachments(liveLetter.attachments || []);
+  const attachments = liveAttachments.length ? liveAttachments : savedAttachments;
+  const bodyText = String(liveLetter.bodyText || '').trim() || String(savedLetter.bodyText || '').trim();
+  const conversation = Array.isArray(liveLetter.conversation) && liveLetter.conversation.length
+    ? liveLetter.conversation
+    : (Array.isArray(savedLetter.conversation) ? savedLetter.conversation : []);
+  return {
+    ...liveLetter,
+    subject: liveLetter.subject || savedLetter.subject || '',
+    dateText: liveLetter.dateText || savedLetter.dateText || '',
+    bodyText,
+    attachments,
+    conversation: conversation.length ? conversation : (bodyText ? [{
+      direction: savedLetter.direction === 'outgoing' ? 'outgoing' : 'incoming',
+      author: savedLetter.direction === 'outgoing' ? 'Me' : (savedLetter.name || ''),
+      dateText: liveLetter.dateText || savedLetter.dateText || '',
+      text: bodyText
+    }] : [])
+  };
+}
+
+function removeWorkspaceAttachmentCacheForProfile(profileId = '') {
+  const cleanProfileId = String(profileId || '').replace(/[^\w-]/g, '_');
+  if (!cleanProfileId) return 0;
+  const root = path.resolve(WORKSPACE_ATTACHMENTS_DIR);
+  const target = path.resolve(root, cleanProfileId);
+  if (!target.startsWith(`${root}${path.sep}`) || !fs.existsSync(target)) return 0;
+  let removedBytes = 0;
+  const stack = [target];
+  while (stack.length) {
+    const current = stack.pop();
+    for (const item of fs.readdirSync(current, { withFileTypes: true })) {
+      const itemPath = path.join(current, item.name);
+      if (item.isDirectory()) stack.push(itemPath);
+      else {
+        try { removedBytes += fs.statSync(itemPath).size; } catch {}
+      }
+    }
+  }
+  fs.rmSync(target, { recursive: true, force: true });
+  return removedBytes;
 }
 
 function workspaceAttachmentExtension(attachment, contentType = '') {
@@ -459,7 +560,7 @@ function getProfileStore(db, profileId, create = false) {
       otherMen: {},
       workspaceInbox: [],
       workspaceMediaGallery: [],
-      createdAt: new Date().toISOString(),
+      createdAt: currentMonthRegistrationDateIso(),
       updatedAt: new Date().toISOString()
     };
   }
@@ -671,7 +772,18 @@ async function agencyFetch(url, options = {}, jar = new Map(), depth = 0) {
   const headers = new Headers(options.headers || {});
   const cookie = cookieHeader(jar);
   if (cookie) headers.set('Cookie', cookie);
-  const response = await fetch(url, { ...options, headers, redirect: 'manual' });
+  const timeoutMs = Math.max(5000, Math.min(120000, Number(options.timeoutMs || 45000) || 45000));
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  let response;
+  try {
+    response = await fetch(url, { ...options, headers, redirect: 'manual', signal: options.signal || controller.signal });
+  } catch (error) {
+    if (error?.name === 'AbortError') throw new Error('Agency request timed out');
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
   storeResponseCookies(response.headers, jar);
   if ([301, 302, 303, 307, 308].includes(response.status)) {
     const location = response.headers.get('location');
@@ -757,6 +869,14 @@ function findLoginForm(html) {
     rememberName: rememberInput?.name || '',
     rememberValue: rememberInput?.value || '1'
   };
+}
+
+function extractDreamLoginError(html = '') {
+  const text = cleanHtmlText(html);
+  const match = text.match(/Your username or password combination is not correct\.?/i) ||
+    text.match(/(?:invalid|incorrect|wrong)\s+(?:username|login|email|password|credentials)[^.]{0,120}\.?/i) ||
+    text.match(/(?:captcha|verification|confirmation|required)[^.]{0,140}\.?/i);
+  return match?.[0]?.trim() || '';
 }
 
 function cleanHtmlText(value) {
@@ -1124,6 +1244,16 @@ function agencyLedgerDateInRange(row, from, to) {
   return true;
 }
 
+function agencyLedgerCalendarDateInRange(row, from, to) {
+  const date = parseAgencyRowDate(row.date);
+  if (!date) return true;
+  const offset = date.getTimezoneOffset() * 60000;
+  const calendarDate = new Date(date.getTime() - offset).toISOString().slice(0, 10);
+  if (from && calendarDate < from) return false;
+  if (to && calendarDate > to) return false;
+  return true;
+}
+
 function agencyLedgerAccessScope(db, user) {
   if (user.role === 'director') {
     return {
@@ -1152,6 +1282,7 @@ function readAgencyLedgerView(db, user, query = {}) {
   const scope = agencyLedgerAccessScope(db, user);
   const from = normalizeAgencyDate(query.from, new Date('1970-01-01'));
   const to = normalizeAgencyDate(query.to, new Date());
+  const useCalendarDate = query.calendarDate === true || String(query.calendarDate || '') === '1';
   const profileFilter = String(query.profileId || '').trim();
   const operatorFilter = String(query.operatorId || '').trim();
   let rows = Object.values(db.agencyBonusLedger || {}).filter(row => {
@@ -1161,9 +1292,17 @@ function readAgencyLedgerView(db, user, query = {}) {
     if (!rowVisibleForUserAssignment(db, user, row)) return false;
     if (profileFilter && String(row.profileId || '') !== profileFilter) return false;
     if (operatorFilter && String(row.assignedOperatorId || '') !== operatorFilter) return false;
-    return agencyLedgerDateInRange(row, from, to);
+    return useCalendarDate
+      ? agencyLedgerCalendarDateInRange(row, from, to)
+      : agencyLedgerDateInRange(row, from, to);
   });
   rows.sort((a, b) => (parseAgencyRowDate(b.date)?.getTime() || 0) - (parseAgencyRowDate(a.date)?.getTime() || 0));
+  const totalWithoutGifts = roundMoney(rows
+    .filter(row => !isAgencyGiftRow(row))
+    .reduce((sum, row) => sum + Number(row.amount || 0), 0));
+  const giftsTotal = roundMoney(rows
+    .filter(row => isAgencyGiftRow(row))
+    .reduce((sum, row) => sum + Number(row.amount || 0), 0));
   const totalsByProfile = {};
   const totalsByOperator = {};
   const dailyByDate = {};
@@ -1248,7 +1387,8 @@ function readAgencyLedgerView(db, user, query = {}) {
     })
     .sort((a, b) => Date.parse(b.from || 0) - Date.parse(a.from || 0));
   const total = roundMoney(rows.reduce((sum, row) => sum + Number(row.amount || 0), 0));
-  const salary = salaryInfoForTotal(total, db.salaryRates, db.salaryFeePercent);
+  const salary = salaryInfoForTotal(totalWithoutGifts, db.salaryRates, db.salaryFeePercent);
+  const rowLimit = Math.min(5000, Math.max(1, Number(query.limit || 250) || 250));
   const monthlySalary = Object.values(monthlyByMonth)
     .map(item => {
       const info = salaryInfoForTotal(item.total, db.salaryRates, db.salaryFeePercent);
@@ -1258,9 +1398,11 @@ function readAgencyLedgerView(db, user, query = {}) {
   return {
     from,
     to,
-    rows: rows.slice(0, 250),
+    rows: rows.slice(0, rowLimit),
     count: rows.length,
     total,
+    totalWithoutGifts,
+    giftsTotal,
     salaryBase: salary.salaryBase,
     siteFeePercent: salary.siteFeePercent,
     siteFeeAmount: salary.siteFeeAmount,
@@ -1388,6 +1530,19 @@ function monthRangeForDateKey(dateKey) {
   const monthEndDate = new Date(year, month, 0);
   const monthEnd = `${monthEndDate.getFullYear()}-${String(monthEndDate.getMonth() + 1).padStart(2, '0')}-${String(monthEndDate.getDate()).padStart(2, '0')}`;
   return { month: `${year}-${String(month).padStart(2, '0')}`, monthStart, monthEnd, daysInMonth: monthEndDate.getDate() };
+}
+
+function dateKeysInRange(fromKey, toKey) {
+  const from = normalizeAgencyDate(fromKey, new Date());
+  const to = normalizeAgencyDate(toKey, new Date());
+  const [fromYear, fromMonth, fromDay] = from.split('-').map(Number);
+  const cursor = new Date(fromYear, fromMonth - 1, fromDay);
+  const days = [];
+  while (localDateKey(cursor) <= to) {
+    days.push(localDateKey(cursor));
+    cursor.setDate(cursor.getDate() + 1);
+  }
+  return days;
 }
 
 function profileIdsAssignedToUserInDateRange(db, user, fromKey, toKey) {
@@ -1618,14 +1773,16 @@ async function refreshAdminOperatorBalancesForDay(db, requester, dateKey) {
   const profileIds = profilesForAdministration(db, requester).map(profile => String(profile.id || '')).filter(Boolean);
   if (profileIds.length) {
     try {
-      for (const groupBy of ['1', '0']) {
+      for (const profileId of profileIds) {
         await fetchAgencyBonuses(agencyUser, {
           db,
           viewerUser: requester,
           from: day,
           to: fetchTo,
-          allowedProfileIds: profileIds,
-          groupBy,
+          profileId,
+          allowedProfileIds: [profileId],
+          groupBy: '0',
+          maxBonusPages: 20,
           skipAssignmentFilter: true
         });
       }
@@ -1645,14 +1802,15 @@ async function refreshAdminOperatorBalancesForMonth(db, requester, dateKey) {
   const profileIds = profilesForAdministration(db, requester).map(profile => String(profile.id || '')).filter(Boolean);
   if (profileIds.length) {
     try {
-      for (const groupBy of ['1', '0']) {
+      for (const profileId of profileIds) {
         await fetchAgencyBonuses(agencyUser, {
           db,
           viewerUser: requester,
           from: monthStart,
           to: fetchTo,
-          allowedProfileIds: profileIds,
-          groupBy,
+          profileId,
+          allowedProfileIds: [profileId],
+          groupBy: '0',
           skipAssignmentFilter: true
         });
       }
@@ -1905,6 +2063,11 @@ async function resolveDreamSinglesAccess(login, password, options = {}) {
     body: submitBody
   }, jar);
   if (!response.ok) throw new Error(`Dream Singles login failed (${response.status})`);
+  html = await response.text();
+  const loginError = extractDreamLoginError(html);
+  if (loginError || dreamPageLooksLoggedOut(html, response.url)) {
+    throw new Error(loginError || `Dream Singles rejected the login or requires confirmation (${dreamLogoutReason(html, response.url)})`);
+  }
 
   response = await agencyFetch(DREAM_INBOX_URL, {
     method: 'GET',
@@ -2157,6 +2320,18 @@ function dreamCookiesForBrowser(jar) {
     }));
 }
 
+function browserCookiesToDreamJar(cookies = []) {
+  const jar = new Map();
+  for (const cookie of Array.isArray(cookies) ? cookies : []) {
+    const name = String(cookie?.name || '').trim();
+    const value = cookie?.value == null ? '' : String(cookie.value);
+    const domain = String(cookie?.domain || '');
+    if (!name || !/(^|\.)dream-singles\.com$/i.test(domain.replace(/^\./, ''))) continue;
+    jar.set(name, value);
+  }
+  return jar;
+}
+
 async function startDreamBrowser(db, user, profileId, options = {}) {
   const id = String(profileId || '');
   const profile = requireProfileForUser(db, user, id);
@@ -2215,14 +2390,23 @@ async function startDreamBrowser(db, user, profileId, options = {}) {
     }
   });
 
-  try {
-    const dreamSession = await openDreamSession(db, user, id, { force: options.refreshDreamSession === true });
-    const cookies = Array.isArray(options.seedCookies) && options.seedCookies.length
-      ? options.seedCookies
-      : dreamCookiesForBrowser(dreamSession.jar);
-    if (cookies.length) await context.addCookies(cookies);
-  } catch (error) {
-    console.warn(`[dream-browser] ${id}: could not seed browser cookies: ${error.message || error}`);
+  if (options.skipDreamSessionSeed !== true) {
+    try {
+      const dreamSession = await openDreamSession(db, user, id, {
+        force: options.refreshDreamSession === true,
+        browserFallback: false
+      });
+      const cookies = Array.isArray(options.seedCookies) && options.seedCookies.length
+        ? options.seedCookies
+        : dreamCookiesForBrowser(dreamSession.jar);
+      if (cookies.length) await context.addCookies(cookies);
+    } catch (error) {
+      console.warn(`[dream-browser] ${id}: could not seed browser cookies: ${error.message || error}`);
+    }
+  } else if (Array.isArray(options.seedCookies) && options.seedCookies.length) {
+    await context.addCookies(options.seedCookies).catch(error => {
+      console.warn(`[dream-browser] ${id}: could not seed provided browser cookies: ${error.message || error}`);
+    });
   }
 
   async function safeDreamGoto(targetUrl, options = {}) {
@@ -2293,18 +2477,51 @@ async function startDreamBrowser(db, user, profileId, options = {}) {
       await safeDreamGoto(DREAM_INBOX_URL);
       await dismissDreamPopups();
     }
-    const currentUrl = page.url();
-    const onMembersPage = /dream-singles\.com\/members(?:[/?#]|$)/i.test(currentUrl);
-    const stillLogin = !onMembersPage && (
+    let currentUrl = page.url();
+    let onMembersPage = /dream-singles\.com\/members(?:[/?#]|$)/i.test(currentUrl);
+    let stillLogin = !onMembersPage && (
       /\/login(?:[/?#]|$)|sign[-_]?in|auth/i.test(currentUrl) ||
       await hasVisiblePasswordInput()
     );
+    if (stillLogin && options.headless === false && options.allowManualLogin !== false) {
+      session.lastError = 'Waiting for manual Dream Singles login';
+      await page.bringToFront().catch(() => {});
+      const deadline = Date.now() + 90_000;
+      while (Date.now() < deadline) {
+        await page.waitForTimeout(2000).catch(() => {});
+        await dismissDreamPopups();
+        currentUrl = page.url();
+        onMembersPage = /dream-singles\.com\/members(?:[/?#]|$)/i.test(currentUrl);
+        if (onMembersPage && !(await hasVisiblePasswordInput())) break;
+      }
+      currentUrl = page.url();
+      onMembersPage = /dream-singles\.com\/members(?:[/?#]|$)/i.test(currentUrl);
+      stillLogin = !onMembersPage && (
+        /\/login(?:[/?#]|$)|sign[-_]?in|auth/i.test(currentUrl) ||
+        await hasVisiblePasswordInput()
+      );
+    }
     if (stillLogin) throw new Error('Dream Singles browser login failed or requires confirmation');
     session.lastSeenAt = new Date().toISOString();
     session.lastError = '';
   }
 
   await ensureLoggedIn();
+  try {
+    const freshCookies = await context.cookies('https://www.dream-singles.com/');
+    const freshJar = browserCookiesToDreamJar(freshCookies);
+    if (freshJar.size) {
+      const freshDb = readDb();
+      const freshProfile = freshDb.profiles?.[id];
+      if (freshProfile) {
+        saveDreamSessionJar(freshProfile, freshJar);
+        freshProfile.updatedAt = new Date().toISOString();
+        writeDb(freshDb);
+      }
+    }
+  } catch (error) {
+    console.warn(`[dream-browser] ${id}: could not save browser cookies: ${error.message || error}`);
+  }
   await safeDreamGoto('https://www.dream-singles.com/members/').catch(() => {});
 
   session.keepAliveTimer = setInterval(async () => {
@@ -2379,6 +2596,57 @@ function restoreDreamSessionFromProfile(profileId, profile, userId = '') {
   }
 }
 
+async function openDreamSessionFromJar(db, user, profileId, profile, jar, options = {}) {
+  const id = String(profileId || '');
+  if (!(jar instanceof Map) || !jar.size) throw new Error('Dream Singles browser session did not return cookies');
+
+  const inboxResponse = await agencyFetch(DREAM_INBOX_URL, {
+    method: 'GET',
+    headers: { ...DREAM_BROWSER_HEADERS, Referer: DREAM_LOGIN_URL }
+  }, jar);
+  const inboxHtml = await inboxResponse.text();
+  if (!inboxResponse.ok || dreamPageLooksLoggedOut(inboxHtml, inboxResponse.url)) {
+    throw new Error(`Dream Singles browser session is not authenticated (${dreamLogoutReason(inboxHtml, inboxResponse.url)})`);
+  }
+
+  let accountHtml = '';
+  try {
+    const accountResponse = await agencyFetch(DREAM_ACCOUNT_URL, { method: 'GET' }, jar);
+    accountHtml = await accountResponse.text();
+  } catch {}
+  const identity = extractDreamProfileIdentity(inboxHtml, accountHtml);
+  if (identity.name && !/^Profile\s+\d+$/i.test(identity.name)) profile.name = identity.name;
+  if (identity.photoUrl) profile.photoUrl = identity.photoUrl;
+  if (options.downloadPhoto !== false && identity.photoUrl) {
+    const photoData = await downloadDreamPhotoDataUrl(identity.photoUrl);
+    if (photoData) {
+      const photoUrl = savePhotoData(id, '__profile', photoData);
+      if (photoUrl) profile.photoUrl = photoUrl;
+    }
+  }
+
+  profile.updatedAt = new Date().toISOString();
+  saveDreamSessionJar(profile, jar);
+  writeDb(db);
+
+  const now = new Date().toISOString();
+  const session = {
+    profileId: id,
+    userId: user.id,
+    jar,
+    identity: {
+      profileId: identity.profileId || id,
+      name: identity.name || profile.name || '',
+      photoUrl: profile.photoUrl || identity.photoUrl || ''
+    },
+    authenticatedAt: now,
+    lastUsedAt: now
+  };
+  dreamSessions.set(id, session);
+  startDreamHeartbeat(id);
+  return session;
+}
+
 function requireProfileForUser(db, user, profileId) {
   const id = String(profileId || '');
   const profile = db.profiles[id];
@@ -2408,11 +2676,31 @@ async function openDreamSession(db, user, profileId, options = {}) {
     if (restored) return restored;
   }
 
-  const result = await resolveDreamSinglesAccess(
-    decryptCredential(profile.credentials.login),
-    decryptCredential(profile.credentials.password),
-    { includeJar: true }
-  );
+  let result;
+  try {
+    result = await resolveDreamSinglesAccess(
+      decryptCredential(profile.credentials.login),
+      decryptCredential(profile.credentials.password),
+      { includeJar: true }
+    );
+  } catch (directError) {
+    if (options.browserFallback === false) throw directError;
+    console.warn(`[dream-login] ${id}: direct login failed, trying hidden browser fallback: ${directError.message || directError}`);
+    try {
+      const browserSession = await startDreamBrowser(db, user, id, {
+        force: true,
+        headless: true,
+        skipDreamSessionSeed: true,
+        reopenHeadlessOnClose: true
+      });
+      const cookies = await browserSession.context.cookies('https://www.dream-singles.com/');
+      const jar = browserCookiesToDreamJar(cookies);
+      return await openDreamSessionFromJar(db, user, id, profile, jar);
+    } catch (browserError) {
+      browserError.message = `${directError.message || 'Dream Singles direct login failed'}; browser fallback failed: ${browserError.message || browserError}`;
+      throw browserError;
+    }
+  }
 
   if (result.name && !/^Profile\s+\d+$/i.test(result.name)) profile.name = result.name;
   if (result.photoData) {
@@ -2489,6 +2777,46 @@ function htmlToText(html = '') {
     .replace(/\n\s+/g, '\n')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
+}
+
+function extractDreamProfilePresence(html = '') {
+  const text = htmlToText(html);
+  const normalized = text.replace(/\s+/g, ' ').trim();
+  const explicitActivity = normalized.match(/\bLast\s+activity\s*:?\s*(Online(?:\s+(?:now|\d+\s+\w+\(s\)\s+ago|\d+\s+(?:minute|minutes|hour|hours|day|days|week|weeks|month|months)\s+ago|\d{4}-\d{2}-\d{2}|[^|]{1,60}))?)/i)?.[1] || '';
+  if (explicitActivity) {
+    const cleanActivity = explicitActivity
+      .replace(/\s+/g, ' ')
+      .replace(/\b(?:message|favorite|chat|profile|photos|videos)\b.*$/i, '')
+      .trim();
+    return {
+      onlineNow: /^Online\s+now$/i.test(cleanActivity),
+      lastActivityText: cleanActivity
+    };
+  }
+
+  const lines = text
+    .split(/\n+/)
+    .map(line => line.replace(/\s+/g, ' ').trim())
+    .filter(Boolean);
+  const joined = lines.join(' | ');
+  const patterns = [
+    /\bLast\s*(?:Activity|Login|Seen|Online)\s*:?\s*([^|]{3,80})/i,
+    /\b(?:Activity|Login)\s*:?\s*([^|]{3,80})/i,
+    /\b(?:Last\s+seen|Was\s+online)\s+([^|]{3,80})/i,
+    /\b((?:\d{1,2}\s*)?(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?\s+\d{1,2},?\s+\d{4}(?:\s+\d{1,2}:\d{2}\s*(?:am|pm)?)?)/i,
+    /\b(\d{1,2}[./-]\d{1,2}[./-]\d{2,4}(?:\s+\d{1,2}:\d{2})?)/i,
+    /\b(\d+\s+(?:minute|minutes|hour|hours|day|days|week|weeks|month|months)\s+ago)\b/i
+  ];
+  for (const pattern of patterns) {
+    const value = joined.match(pattern)?.[1] || '';
+    const clean = value
+      .replace(/\b(?:send\s+message|add\s+to\s+favorites|profile|photos|videos|chat|mail|message)\b.*$/i, '')
+      .replace(/[|]+/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+    if (clean && clean.length <= 80) return { onlineNow: false, lastActivityText: clean };
+  }
+  return { onlineNow: false, lastActivityText: '' };
 }
 
 function attrFromTag(tag = '', attr = '') {
@@ -3257,21 +3585,59 @@ function collectWorkspaceLetterHtml(html = '', sourceUrl = DREAM_INBOX_URL, fall
   const seenAttachments = new Set();
   const attachmentHtml = [
     extractElementById(html, 'attachment'),
-    ...extractElementsByClassName(html, 'attachment')
+    extractElementById(html, 'attachments'),
+    extractElementById(html, 'video'),
+    extractElementById(html, 'videos'),
+    extractElementById(html, 'media'),
+    ...extractElementsByClassName(html, 'attachment'),
+    ...extractElementsByClassName(html, 'attachments'),
+    ...extractElementsByClassName(html, 'mail-attachment'),
+    ...extractElementsByClassName(html, 'message-attachment'),
+    ...extractElementsByClassName(html, 'video'),
+    ...extractElementsByClassName(html, 'videos'),
+    ...extractElementsByClassName(html, 'boomerang'),
+    ...extractElementsByClassName(html, 'media'),
+    ...extractElementsByClassName(html, 'gallery')
   ].filter(Boolean).join('\n');
-  const addAttachment = (type, url) => {
+  const addAttachment = (type, url, label = '') => {
     const cleanUrl = String(url || '').trim();
     if (!cleanUrl || seenAttachments.has(cleanUrl)) return;
+    if (!/(^|\.)dream-singles\.com\//i.test(cleanUrl) && !/profile-photos-cdn|dream-singles/i.test(cleanUrl)) return;
     seenAttachments.add(cleanUrl);
-    attachments.push({ type, url: cleanUrl });
+    attachments.push({ type, url: cleanUrl, label: cleanWorkspaceText(label || '') });
+  };
+  const attachmentTypeForUrl = (url = '', context = '') => {
+    const source = `${url} ${context}`;
+    if (/\.(?:mp4|webm|mov|m4v)(?:[?#]|$)|\/(?:video|videos|movie|movies|watch|play)\b|video[_-]?gallery|boomerang/i.test(source)) return 'video';
+    if (/\.(?:jpe?g|png|webp|gif|bmp|avif)(?:[?#]|$)|\/(?:photo|image|gallery)\b/i.test(source)) return 'image';
+    return '';
   };
   for (const img of attachmentHtml.matchAll(/<img\b[^>]*>/gi)) {
     const src = absoluteDreamUrl(attrFromTag(img[0], 'src') || attrFromTag(img[0], 'data-src'), sourceUrl);
     if (src && !/logo|banner|sprite|icon|captcha|avatar|emoji|smil|emoticon/i.test(src)) addAttachment('image', src);
   }
+  for (const video of attachmentHtml.matchAll(/<video\b[^>]*>[\s\S]*?<\/video>|<video\b[^>]*>/gi)) {
+    const block = video[0] || '';
+    const src = absoluteDreamUrl(attrFromTag(block, 'src'), sourceUrl);
+    const sourceSrc = absoluteDreamUrl(block.match(/<source\b[^>]*\bsrc=["']([^"']+)["']/i)?.[1] || '', sourceUrl);
+    const poster = absoluteDreamUrl(attrFromTag(block, 'poster'), sourceUrl);
+    if (src) addAttachment('video', src, 'Video');
+    if (sourceSrc) addAttachment('video', sourceSrc, 'Video');
+    if (!src && !sourceSrc && poster) addAttachment('image', poster, 'Video preview');
+  }
   for (const anchor of attachmentHtml.matchAll(/<a\b[^>]*href=["'][^"']+\.(?:mp4|webm|mov|m4v|jpe?g|png|webp|gif)(?:[?#][^"']*)?["'][^>]*>/gi)) {
     const href = absoluteDreamUrl(attrFromTag(anchor[0], 'href'), sourceUrl);
     if (href) addAttachment(/\.(?:mp4|webm|mov|m4v)(?:[?#]|$)/i.test(href) ? 'video' : 'image', href);
+  }
+  for (const tag of attachmentHtml.matchAll(/<(?:a|button|div|span)\b[^>]*>/gi)) {
+    const rawTag = tag[0] || '';
+    const context = `${rawTag} ${htmlToText(rawTag)}`;
+    for (const attr of ['href', 'data-href', 'data-url', 'data-src', 'data-video-url', 'data-file', 'src']) {
+      const url = absoluteDreamUrl(attrFromTag(rawTag, attr), sourceUrl);
+      if (!url) continue;
+      const type = attachmentTypeForUrl(url, context);
+      if (type) addAttachment(type, url, type === 'video' ? 'Video' : 'Photo');
+    }
   }
 
   const replyUrl = findWorkspaceComposeUrl(html, sourceUrl) || deriveWorkspaceComposeUrlFromReadUrl(sourceUrl);
@@ -3290,6 +3656,270 @@ function collectWorkspaceLetterHtml(html = '', sourceUrl = DREAM_INBOX_URL, fall
       text: bodyText
     }] : []
   };
+}
+
+function extractWorkspaceMessageHistoryCandidates(html = '') {
+  const candidates = [];
+  const addCandidate = (value = '') => {
+    const block = String(value || '').trim();
+    if (!block) return;
+    const text = htmlToText(block);
+    if (!/message history|(?:\d{1,2}:\d{2}\s*(?:am|pm)?\s*,\s*)?(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+\d{1,2},\s+20\d{2}/i.test(text)) return;
+    if (!candidates.includes(block)) candidates.push(block);
+  };
+
+  [
+    'messageHistory',
+    'message_history',
+    'message-history',
+    'mailHistory',
+    'mail_history',
+    'historyModal',
+    'messageHistoryModal'
+  ].forEach(id => addCandidate(extractElementById(html, id)));
+
+  [
+    'message-history',
+    'messageHistory',
+    'mail-history',
+    'mailHistory',
+    'history-modal',
+    'modal-body'
+  ].forEach(className => {
+    extractElementsByClassName(html, className).forEach(addCandidate);
+  });
+
+  const lower = String(html || '').toLowerCase();
+  let index = lower.indexOf('message history');
+  while (index >= 0 && candidates.length < 8) {
+    addCandidate(String(html || '').slice(Math.max(0, index - 2600), Math.min(String(html || '').length, index + 18000)));
+    index = lower.indexOf('message history', index + 15);
+  }
+
+  return candidates;
+}
+
+function parseWorkspaceMessageHistoryHtml(html = '', fallbackName = '') {
+  const source = String(html || '')
+    .replace(/<script\b[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<style\b[\s\S]*?<\/style>/gi, ' ');
+  const entries = [];
+  const seen = new Set();
+  const datePattern = String.raw`(?:(?:\d{1,2}:\d{2}\s*(?:am|pm)?\s*,\s*)?(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+\d{1,2},\s+20\d{2}|20\d{2}-\d{2}-\d{2}\s+\d{1,2}:\d{2}|(?:\d{1,2}\/\d{1,2}\/20\d{2})\s+\d{1,2}:\d{2}(?::\d{2})?)`;
+  const headerRegex = new RegExp(`^[-•\\s]*(?:(.{1,70}?)\\s*:\\s*)?(${datePattern})\\s*(.*)$`, 'i');
+  const addEntry = (author = '', dateText = '', text = '') => {
+    const cleanText = cleanWorkspaceLetterText(text, fallbackName).replace(/^message history\s*/i, '').trim();
+    if (!cleanText || cleanText.length < 2) return;
+    const cleanAuthor = cleanWorkspaceText(author).replace(/^message history$/i, '').slice(0, 80);
+    const key = `${cleanAuthor}|${dateText}|${cleanText.slice(0, 500)}`.toLowerCase();
+    if (seen.has(key)) return;
+    seen.add(key);
+    entries.push({
+      author: cleanAuthor || '',
+      dateText: cleanWorkspaceText(dateText),
+      text: cleanText
+    });
+  };
+
+  const itemMatches = Array.from(source.matchAll(/<li\b[^>]*>[\s\S]*?(?=<li\b|<\/(?:ul|ol)>|$)/gi));
+  for (const match of itemMatches) {
+    const text = htmlToText(match[0]);
+    const lines = text.split(/\n+/).map(line => cleanWorkspaceText(line)).filter(Boolean);
+    if (!lines.length) continue;
+    const header = lines[0].match(headerRegex);
+    if (!header) continue;
+    const body = [header[3] || '', ...lines.slice(1)].filter(Boolean).join('\n');
+    addEntry(header[1] || '', header[2] || '', body);
+  }
+
+  if (entries.length) return entries;
+
+  const lines = htmlToText(source)
+    .split(/\n+/)
+    .map(line => cleanWorkspaceText(line))
+    .filter(Boolean)
+    .filter(line => !/^message history$/i.test(line) && !/^close$/i.test(line));
+  let current = null;
+  for (const line of lines) {
+    const header = line.match(headerRegex);
+    if (header) {
+      if (current) addEntry(current.author, current.dateText, current.lines.join('\n'));
+      current = { author: header[1] || '', dateText: header[2] || '', lines: [] };
+      if (header[3]) current.lines.push(header[3]);
+    } else if (current) {
+      current.lines.push(line);
+    }
+  }
+  if (current) addEntry(current.author, current.dateText, current.lines.join('\n'));
+
+  return entries;
+}
+
+function extractWorkspaceMessageHistoryId(html = '') {
+  const source = String(html || '');
+  return source.match(/showMessageHistory\s*\(\s*['"]([^'"]+)['"]\s*\)/i)?.[1] ||
+    source.match(/\/members\/messaging\/readMessageHistory\/([^"'<>\s)]+)/i)?.[1] ||
+    source.match(/\bid=["']which_message["'][^>]*\bvalue=["']([^"']+)["']/i)?.[1] ||
+    source.match(/\bname=["']messaging_compose\[replyId\]["'][^>]*\bvalue=["']([^"']+)["']/i)?.[1] ||
+    '';
+}
+
+function parseWorkspaceMessageHistoryJson(text = '', fallbackName = '') {
+  let data;
+  try {
+    data = JSON.parse(String(text || ''));
+  } catch {
+    return [];
+  }
+  const rows = Array.isArray(data?.results) ? data.results : (Array.isArray(data) ? data : []);
+  return rows
+    .map(item => {
+      const author = cleanWorkspaceText(item?.from_name || item?.author || fallbackName || '');
+      const dateText = cleanWorkspaceText(item?.hyperlink || item?.date || item?.dateText || '');
+      const timestamp = Number(item?.sent_datetime || item?.timestamp || 0);
+      const readAt = Number(item?.read || item?.read_at || item?.readAt || 0) || 0;
+      const senderValue = Number(item?.sender);
+      const body = cleanWorkspaceLetterText(htmlToText(item?.body || item?.message || item?.text || ''), fallbackName);
+      const attachmentHash = cleanWorkspaceText(item?.attachment_hash || item?.attachmentHash || '');
+      const videoAttachmentHash = cleanWorkspaceText(item?.video_attachment_hash || item?.videoAttachmentHash || '');
+      return {
+        author,
+        dateText: dateText || (timestamp ? new Date(timestamp * 1000).toLocaleString('en-US', {
+          month: 'short',
+          day: '2-digit',
+          year: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit'
+        }) : ''),
+        text: body,
+        sender: Number.isFinite(senderValue) ? senderValue : null,
+        readAt,
+        readAtText: readAt ? new Date(readAt * 1000).toLocaleString('en-US', {
+          month: 'short',
+          day: '2-digit',
+          year: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit'
+        }) : '',
+        readByMan: senderValue === 0 && readAt > 0,
+        msgId: cleanWorkspaceText(item?.msgId || item?.msg_id || ''),
+        msgHash: cleanWorkspaceText(item?.msg_hash || item?.msgHash || ''),
+        senderId: cleanWorkspaceText(item?.sender_id || item?.senderId || ''),
+        receiverId: cleanWorkspaceText(item?.receiver_id || item?.receiverId || ''),
+        sentTimestamp: timestamp || 0,
+        attachmentHash,
+        videoAttachmentHash,
+        hasPhoto: Boolean(attachmentHash),
+        hasVideo: Boolean(videoAttachmentHash),
+        replyTo: cleanWorkspaceText(item?.reply_to || item?.replyTo || ''),
+        isReply: Boolean(Number(item?.is_reply || 0)),
+        repliedAt: Number(item?.replied || 0) || 0
+      };
+    })
+    .filter(item => item.text);
+}
+
+function findWorkspaceMessageHistoryUrls(html = '', sourceUrl = DREAM_INBOX_URL) {
+  const urls = [];
+  const seen = new Set();
+  const addUrl = (value = '') => {
+    const url = absoluteDreamUrl(value, sourceUrl);
+    if (!url || seen.has(url)) return;
+    if (!/(^|\.)dream-singles\.com\//i.test(url) && !/^https:\/\/www\.dream-singles\.com\//i.test(url)) return;
+    if (!/history|message|messaging|reply/i.test(url)) return;
+    seen.add(url);
+    urls.push(url);
+  };
+
+  for (const tag of String(html || '').matchAll(/<(?:a|button)\b[^>]*>[\s\S]*?<\/(?:a|button)>/gi)) {
+    const text = htmlToText(tag[0]);
+    if (!/message history|history/i.test(text)) continue;
+    ['href', 'data-url', 'data-href', 'data-remote', 'data-action'].forEach(attr => addUrl(attrFromTag(tag[0], attr)));
+    for (const quoted of tag[0].matchAll(/["']([^"']*(?:history|message)[^"']*)["']/gi)) addUrl(quoted[1]);
+  }
+  for (const quoted of String(html || '').matchAll(/["']([^"']*(?:message[_-]?history|history)[^"']*)["']/gi)) {
+    addUrl(quoted[1]);
+  }
+  return urls.slice(0, 6);
+}
+
+function workspaceHistoryMonthPrefix(timestamp = 0) {
+  const date = new Date((Number(timestamp) || 0) * 1000);
+  if (!Number.isFinite(date.getTime()) || date.getUTCFullYear() < 2000) return '';
+  const year = String(date.getUTCFullYear());
+  const month = String(date.getUTCMonth() + 1).padStart(2, '0');
+  return `${year}${month}01`;
+}
+
+function buildWorkspaceHistoryReadUrl(entry = {}, context = {}) {
+  const msgId = cleanWorkspaceText(entry.msgId || '');
+  if (!msgId) return '';
+  const monthPrefix = workspaceHistoryMonthPrefix(entry.sentTimestamp);
+  if (!monthPrefix) return '';
+  const version = cleanWorkspaceText(
+    String(context.historyPrefix || '').match(/_v\d+/i)?.[0]?.slice(1) || 'v20250103'
+  );
+  const isOutgoing = Number(entry.sender) === 0;
+  const boxPrefix = `${isOutgoing ? 'letters_women_sent' : 'letters_read'}_${monthPrefix}_${version}`;
+  const url = new URL(`/members/messaging/read/${boxPrefix}:${msgId}`, context.baseUrl || DREAM_INBOX_URL);
+  url.searchParams.set('mode', isOutgoing ? 'sent' : 'inbox');
+  url.searchParams.set('page', '1');
+  url.searchParams.set('view', 'all');
+  return url.toString();
+}
+
+async function collectWorkspaceMessageHistory(profileId, rawUrl = '', fallbackName = '') {
+  const composeUrl = await resolveWorkspaceReplyComposeUrl(profileId, rawUrl);
+  const page = await dreamSessionFetch(profileId, composeUrl);
+  const historyId = extractWorkspaceMessageHistoryId(page.html);
+  if (historyId) {
+    const historyUrl = new URL(`/members/messaging/readMessageHistory/${historyId}`, page.url || composeUrl).toString();
+    const historyPage = await dreamSessionFetch(profileId, historyUrl, {
+      headers: {
+        ...DREAM_XHR_HEADERS,
+        Accept: 'application/json, text/javascript, */*; q=0.01',
+        Referer: page.url || composeUrl
+      }
+    });
+    const jsonEntries = parseWorkspaceMessageHistoryJson(historyPage.html, fallbackName);
+    if (jsonEntries.length) {
+      const historyPrefix = String(historyId || '').split(':')[0] || '';
+      const entries = jsonEntries.map(entry => ({
+        ...entry,
+        historyUrl: buildWorkspaceHistoryReadUrl(entry, {
+          historyPrefix,
+          baseUrl: page.url || composeUrl
+        })
+      }));
+      return { composeUrl, sourceUrl: historyPage.url || historyUrl, source: 'dream-json', historyId, historyPrefix, entries };
+    }
+  }
+  const candidates = extractWorkspaceMessageHistoryCandidates(page.html);
+  for (const candidate of candidates) {
+    const entries = parseWorkspaceMessageHistoryHtml(candidate, fallbackName);
+    if (entries.length) return { composeUrl, sourceUrl: page.url || composeUrl, source: 'compose', entries };
+  }
+
+  const ajaxUrls = findWorkspaceMessageHistoryUrls(page.html, page.url || composeUrl);
+  for (const url of ajaxUrls) {
+    try {
+      const historyPage = await dreamSessionFetch(profileId, url, {
+        headers: {
+          Referer: page.url || composeUrl,
+          'X-Requested-With': 'XMLHttpRequest'
+        }
+      });
+      const blocks = extractWorkspaceMessageHistoryCandidates(historyPage.html);
+      const directEntries = parseWorkspaceMessageHistoryHtml(historyPage.html, fallbackName);
+      if (directEntries.length) return { composeUrl, sourceUrl: historyPage.url || url, source: 'ajax', entries: directEntries };
+      for (const block of blocks) {
+        const entries = parseWorkspaceMessageHistoryHtml(block, fallbackName);
+        if (entries.length) return { composeUrl, sourceUrl: historyPage.url || url, source: 'ajax', entries };
+      }
+    } catch {}
+  }
+
+  return { composeUrl, sourceUrl: page.url || composeUrl, source: 'compose', entries: [] };
 }
 
 function collectWorkspaceInboxHtml(html = '', sourceUrl = DREAM_INBOX_URL, targetId = '') {
@@ -3456,6 +4086,56 @@ function collectDreamOnlineFavorites(html = '', sourceUrl = 'https://www.dream-s
   return [...onlineIds].map(id => ({ id, onlineNow: true, lastActivityText: 'Online now', sourceUrl }));
 }
 
+function collectDreamFavoriteIds(html = '') {
+  const ids = new Set();
+  const source = String(html || '');
+  const linkPattern = /<a\b[^>]*href=["']([^"']*(?:\/|\b)(\d{4,})\.html[^"']*)["'][\s\S]*?<\/a>/gi;
+  let match;
+  while ((match = linkPattern.exec(source))) {
+    const id = String(match[2] || '').trim();
+    if (/^\d{4,}$/.test(id)) ids.add(id);
+  }
+  const idPattern = /\b(?:ID|id)\s*:?\s*(\d{4,})\b/g;
+  while ((match = idPattern.exec(htmlToText(source)))) {
+    const id = String(match[1] || '').trim();
+    if (/^\d{4,}$/.test(id)) ids.add(id);
+  }
+  return [...ids];
+}
+
+async function syncDreamSiteFavorites(profileId) {
+  const pageUrl = 'https://www.dream-singles.com/members/connections/myFavorites?all=1&folder=-1';
+  const page = await dreamSessionFetch(profileId, pageUrl);
+  const favoriteIds = collectDreamFavoriteIds(page.html);
+  const db = readDb();
+  const profile = getProfileStore(db, profileId, true);
+  const favoriteSet = new Set(favoriteIds);
+  const updatedAt = new Date().toISOString();
+  let updated = 0;
+  for (const man of Object.values(profile.men || {})) {
+    const siteFavorite = favoriteSet.has(String(man.id || ''));
+    if (man.siteFavorite !== siteFavorite) updated++;
+    man.siteFavorite = siteFavorite;
+    man.siteFavoriteUpdatedAt = updatedAt;
+  }
+  if (Array.isArray(profile.workspaceInbox)) {
+    profile.workspaceInbox = profile.workspaceInbox.map(letter => ({
+      ...letter,
+      siteFavorite: favoriteSet.has(String(letter?.id || '')),
+      siteFavoriteUpdatedAt: updatedAt
+    }));
+  }
+  profile.updatedAt = updatedAt;
+  writeDb(db);
+  return {
+    favoriteIds,
+    favorites: favoriteIds.length,
+    updated,
+    checkedAt: updatedAt,
+    sourceUrl: page.url || pageUrl
+  };
+}
+
 function persistWorkspaceLetters(profileId, incoming = [], forcedDirection = 'incoming', options = {}) {
   const db = readDb();
   const profile = getProfileStore(db, profileId, true);
@@ -3552,7 +4232,7 @@ async function syncDreamInbox(profileId, options = {}) {
   for (let page = 1; page <= maxPages; page += 1) {
     const pageUrl = workspaceInboxPageUrl(page);
     const result = await dreamSessionFetch(profileId, pageUrl);
-    const parsed = collectWorkspaceInboxHtml(result.html, result.url || pageUrl, targetQuery);
+    const parsed = collectWorkspaceInboxHtml(result.html, result.url || pageUrl, '');
     if (parsed.requiresLogin) throw new Error('Dream Singles login is required');
     if (!parsed.letters.length) break;
     let addedOnPage = 0;
@@ -3581,13 +4261,26 @@ async function syncDreamWorkspaceMessages(profileId, options = {}) {
   const view = String(options.view || 'all').trim();
   const targetQuery = targetIds.size === 1 ? [...targetIds][0] : '';
   const stopAtShortPage = options.stopAtShortPage === true;
+  const stopAtExisting = options.stopAtExisting === true && !exactPage && direction === 'incoming' && targetQuery;
   const shortPageSize = Math.max(1, Number(options.shortPageSize || 12) || 12);
   const letters = [];
   const seen = new Set();
   let emptyPages = 0;
   let discoveredLastPage = 1;
+  let reachedExistingLetter = false;
+  const existingKeys = new Set();
+  if (stopAtExisting) {
+    const db = readDb();
+    const profile = getProfileStore(db, profileId, true);
+    for (const letter of Array.isArray(profile.workspaceInbox) ? profile.workspaceInbox : []) {
+      if (String(letter?.id || '').trim() === targetQuery && String(letter?.direction || 'incoming') !== 'outgoing') {
+        const key = String(letter?.key || '').trim();
+        if (key) existingKeys.add(key);
+      }
+    }
+  }
 
-  for (let page = startPage; page <= endPage; page += 1) {
+  for (let page = startPage; page <= endPage && !reachedExistingLetter; page += 1) {
     const pageUrl = workspaceMessagingPageUrl(page, { mode, view, q: targetQuery });
     const result = await dreamSessionFetch(profileId, pageUrl);
     discoveredLastPage = Math.max(discoveredLastPage, parseWorkspaceMessagingLastPage(result.html, result.url || pageUrl));
@@ -3618,11 +4311,16 @@ async function syncDreamWorkspaceMessages(profileId, options = {}) {
       matchingOnPage += 1;
       const key = String(letter.key || '').trim();
       if (!key || seen.has(key)) continue;
+      if (stopAtExisting && existingKeys.has(key)) {
+        reachedExistingLetter = true;
+        break;
+      }
       seen.add(key);
       letters.push({ ...letter, dreamListPage: page });
       addedOnPage += 1;
     }
 
+    if (reachedExistingLetter) break;
     if (addedOnPage) emptyPages = 0;
     else emptyPages += 1;
     if (!targetIds.size && !addedOnPage) break;
@@ -3702,9 +4400,13 @@ async function fetchAgencyBonuses(user, options = {}) {
   params.set('form[startDate]', from);
   params.set('form[endDate]', to);
   if (!params.has('form[type]')) params.set('form[type]', '0');
-  if (allowedProfileIds.size || !params.has('form[profileId]')) params.set('form[profileId]', '0');
+  if (profileFilter) {
+    params.set('form[profileId]', profileFilter);
+  } else if (allowedProfileIds.size || !params.has('form[profileId]')) {
+    params.set('form[profileId]', '0');
+  }
   params.set('form[groupBy]', String(options.groupBy ?? params.get('form[groupBy]') ?? '1'));
-  params.set('form[extra]', allowedProfileIds.size ? '' : (profileFilter || params.get('form[extra]') || ''));
+  params.set('form[extra]', profileFilter || (allowedProfileIds.size && allowedProfileList.length === 1 ? allowedProfileList[0] : params.get('form[extra]') || ''));
   const url = new URL('/finances/bonuses', session.credentials.baseUrl);
   url.search = params.toString();
   const response = await agencyFetch(url.toString(), { method: 'GET' }, session.jar);
@@ -3712,8 +4414,9 @@ async function fetchAgencyBonuses(user, options = {}) {
   if (/type=["']?password/i.test(html)) throw new Error('Agency session expired while loading bonuses');
   const fetched = new Set([url.toString()]);
   const queue = parseAgencyBonusPageLinks(html, url.toString());
+  const maxBonusPages = Math.min(1000, Math.max(1, Number(options.maxBonusPages || 500) || 500));
   let rows = parseAgencyBonusRows(html);
-  for (let index = 0; index < queue.length && fetched.size < 60; index += 1) {
+  for (let index = 0; index < queue.length && fetched.size < maxBonusPages; index += 1) {
     const pageUrl = queue[index];
     if (fetched.has(pageUrl)) continue;
     fetched.add(pageUrl);
@@ -3742,7 +4445,7 @@ async function fetchAgencyBonuses(user, options = {}) {
   if (db && !options.skipAssignmentFilter && ['operator', 'admin'].includes(viewerUser.role)) {
     rows = rows.filter(row => rowVisibleForUserAssignment(db, viewerUser, row));
   }
-  if (db) rows = persistAgencyBonusRows(db, rows, { profileId: profileFilter });
+  if (db && options.persist !== false) rows = persistAgencyBonusRows(db, rows, { profileId: profileFilter });
   const total = rows.reduce((sum, row) => sum + Number(row.amount || 0), 0);
   return { from, to, profileId: profileFilter, rows, count: rows.length, total: Math.round(total * 100) / 100, pagesFetched: fetched.size };
 }
@@ -3947,16 +4650,7 @@ function adminPanelAdminsForOwner(db) {
 
 function profilesForUser(db, user) {
   if (user.role === 'director') return [];
-  const ids = user.role === 'admin'
-    ? Object.values(db.profiles || {})
-      .filter(profile => {
-        if (profile?.active === false) return false;
-        if (String(profile?.ownerAdminId || '') !== String(user.id || '')) return false;
-        const operator = activeOperatorForProfile(db, profile.id);
-        return !operator;
-      })
-      .map(profile => String(profile.id || ''))
-    : (user.profileIds || []);
+  const ids = user.profileIds || [];
   return [...new Set(ids)].map(id => db.profiles[id]).filter(profile => profile?.active !== false)
     .map(profile => ({
       id: profile.id,
@@ -3971,14 +4665,13 @@ function profilesForAdministration(db, user) {
     ? Object.keys(db.profiles || {})
     : Object.values(db.profiles || {})
       .filter(profile =>
-        !profile?.ownerAdminId ||
         String(profile?.ownerAdminId || '') === String(user?.id || '') ||
         (user.profileIds || []).includes(String(profile?.id || ''))
       )
       .map(profile => String(profile.id));
   return ids.map(id => db.profiles[id]).filter(profile => profile?.active !== false)
     .map(profile => {
-      const assigned = activeOperatorForProfile(db, profile.id);
+      const assigned = currentAssignedUserForProfile(db, profile.id);
       return {
         id: profile.id,
         name: profile.name || `Profile ${profile.id}`,
@@ -4007,9 +4700,7 @@ function userHasWorkingProfile(db, user, profileId) {
   if (!id || !user || user.active === false) return false;
   if (user.role === 'admin') {
     const assigned = currentAssignedUserForProfile(db, id);
-    const profile = db.profiles?.[id];
     return String(assigned?.id || '') === String(user.id || '') ||
-      String(profile?.ownerAdminId || '') === String(user.id || '') ||
       (user.profileIds || []).includes(id);
   }
   return (user.profileIds || []).includes(id);
@@ -4110,9 +4801,13 @@ app.post('/api/auth/setup', (req, res) => {
 app.post('/api/auth/login', (req, res) => {
   const db = readDb();
   const username = String(req.body?.username || '').trim().toLowerCase();
+  const clientType = String(req.body?.clientType || 'web').trim().toLowerCase();
   const user = Object.values(db.users || {}).find(item => item.username.toLowerCase() === username);
   if (!user || user.active === false || !passwordMatches(String(req.body?.password || ''), user)) {
     return res.status(401).json({ ok: false, error: 'Invalid login or password' });
+  }
+  if (user.role === 'operator' && clientType !== 'desktop') {
+    return res.status(403).json({ ok: false, error: 'Operators can sign in only from the desktop app' });
   }
   createSession(res, db, user.id);
   writeDb(db);
@@ -4201,13 +4896,13 @@ app.put('/api/translator/settings', requireUser, (req, res) => {
   res.json({ ok: true, settings: publicTranslatorSettings(user.translator) });
 });
 
-app.get('/api/agency/settings', requireAdminPanelUser, (req, res) => {
+app.get('/api/agency/settings', requireDirector, (req, res) => {
   const db = readDb();
   const user = db.users?.[req.user.id];
   res.json({ ok: true, settings: publicAgencySettings(user?.agency || {}) });
 });
 
-app.put('/api/agency/settings', requireAdminPanelUser, (req, res) => {
+app.put('/api/agency/settings', requireDirector, (req, res) => {
   const db = readDb();
   const user = db.users?.[req.user.id];
   if (!user) return res.status(404).json({ ok: false, error: 'User not found' });
@@ -4220,12 +4915,16 @@ app.put('/api/agency/settings', requireAdminPanelUser, (req, res) => {
   res.json({ ok: true, settings: publicAgencySettings(user.agency) });
 });
 
-app.post('/api/agency/test', requireAdminPanelUser, async (req, res) => {
+app.post('/api/agency/test', requireDirector, async (req, res) => {
   const db = readDb();
   const user = db.users?.[req.user.id];
   if (!user) return res.status(404).json({ ok: false, error: 'User not found' });
   try {
-    const result = await verifyAgencyAccess(user);
+    const testUser = { ...user, agency: { ...(user.agency || {}) } };
+    if (req.body && Object.keys(req.body).length) {
+      updateAgencySettings(testUser, req.body || {});
+    }
+    const result = await verifyAgencyAccess(testUser);
     res.json({ ok: true, ...result });
   } catch (error) {
     res.status(400).json({ ok: false, error: error.message || 'Could not verify Agency access' });
@@ -4353,7 +5052,7 @@ app.get('/api/agencyos/dashboard/operators', requireAdminPanelViewer, (req, res)
         to: monthRange.to,
         operatorId: operator.id
       });
-      const salary = salaryInfoForTotal(ledger.total || 0, db.salaryRates, db.salaryFeePercent);
+      const salary = salaryInfoForTotal(ledger.totalWithoutGifts || 0, db.salaryRates, db.salaryFeePercent);
       return {
         operatorId: String(operator.id || ''),
         role: operator.role || 'operator',
@@ -4362,6 +5061,7 @@ app.get('/api/agencyos/dashboard/operators', requireAdminPanelViewer, (req, res)
         active: operator.active !== false,
         deletedAt: operator.deletedAt || '',
         income: salary.balance,
+        gifts: Number(ledger.giftsTotal || 0),
         percent: salary.percent,
         salary: salary.salary,
         profileCount: profileIdsAssignedToUserInDateRange(db, operator, monthRange.from, monthRange.to).length
@@ -4370,6 +5070,101 @@ app.get('/api/agencyos/dashboard/operators', requireAdminPanelViewer, (req, res)
     res.json({ ok: true, year: yearRange.year, month: monthRange.month, rows });
   } catch (error) {
     res.status(error.status || 400).json({ ok: false, error: error.message || 'Could not load dashboard operators' });
+  }
+});
+
+app.get('/api/agencyos/dashboard/bonuses', requireAdminPanelViewer, async (req, res) => {
+  const db = readDb();
+  const user = db.users?.[req.user.id];
+  if (!user) return res.status(404).json({ ok: false, error: 'User not found' });
+  try {
+    const requester = resolveAdminPanelRequester(db, user, req.query?.adminId);
+    const yearRange = dashboardYearRange(req.query?.year);
+    const monthRange = dashboardMonthRange(yearRange.year, req.query?.month);
+    const rawFrom = String(req.query?.from || '').trim();
+    const rawTo = String(req.query?.to || '').trim();
+    const requestedProfileId = String(req.query?.profileId || '').trim();
+    let from = rawFrom ? normalizeAgencyDate(rawFrom, monthRange.from) : monthRange.from;
+    let to = rawTo ? normalizeAgencyDate(rawTo, monthRange.to) : monthRange.to;
+    if (from > to) [from, to] = [to, from];
+    const operators = dashboardOperatorsForRange(db, requester, from, to);
+    const operatorById = new Map(operators.map(operator => [String(operator.id || ''), operator]));
+    const allowedProfileIds = new Set();
+    for (const operator of operators) {
+      for (const profileId of profileIdsAssignedToUserInDateRange(db, operator, from, to)) {
+        allowedProfileIds.add(String(profileId || '').trim());
+      }
+    }
+    const profiles = [...allowedProfileIds]
+      .map(profileId => db.profiles?.[profileId])
+      .filter(profile => profile && profile.active !== false)
+      .map(profile => ({
+        id: String(profile.id || ''),
+        name: profile.name || `Profile ${profile.id}`
+      }))
+      .sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')));
+    if (requestedProfileId) {
+      if (!allowedProfileIds.has(requestedProfileId)) {
+        return res.json({ ok: true, live: true, year: yearRange.year, month: monthRange.month, from, to, profileId: requestedProfileId, count: 0, total: 0, giftsTotal: 0, profiles, rows: [] });
+      }
+      allowedProfileIds.clear();
+      allowedProfileIds.add(requestedProfileId);
+    }
+    if (!allowedProfileIds.size) {
+      return res.json({ ok: true, live: true, year: yearRange.year, month: monthRange.month, from, to, count: 0, total: 0, giftsTotal: 0, profiles, rows: [] });
+    }
+    const agencyUser = agencyAccessUserFor(db, requester, user);
+    const liveResult = await fetchAgencyBonuses(agencyUser, {
+      db,
+      viewerUser: requester,
+      from,
+      to,
+      profileId: requestedProfileId,
+      allowedProfileIds: [...allowedProfileIds],
+      skipAssignmentFilter: true,
+      persist: false,
+      maxBonusPages: 1000
+    });
+    if (Array.isArray(liveResult.rows) && liveResult.rows.length) {
+      persistAgencyBonusRows(db, liveResult.rows, { profileId: requestedProfileId });
+      writeDb(db);
+    }
+    const byKey = new Map();
+    for (const row of liveResult.rows || []) {
+      const gift = isAgencyGiftRow(row);
+      const profileId = String(row.profileId || profileIdFromAgencyRow(row, [...allowedProfileIds]) || profileIdFromAgencyTarget(row.to) || '').trim();
+      if (!profileId || !allowedProfileIds.has(profileId)) continue;
+      const rowDate = parseAgencyRowDate(row.date);
+      const assigned = assignedUserForProfileAt(db, profileId, rowDate);
+      const operator = assigned?.id ? operatorById.get(String(assigned.id)) : null;
+      if (!operator) continue;
+      const key = row.id || agencyBonusLedgerKey({ ...row, profileId });
+      byKey.set(`${String(operator.id || '')}:${key}`, {
+        id: String(key || ''),
+        type: row.type || '',
+        by: row.byWhom || row.by || '',
+        to: row.to || '',
+        date: row.date || '',
+        amount: Number(row.amount || 0),
+        amountText: row.amountText || '',
+        gift,
+        profileId,
+        profileName: db.profiles?.[profileId]?.name || profileId,
+        operatorId: String(operator.id || ''),
+        operatorName: operator.name || operator.username || operator.id,
+        operatorLogin: operator.username || '',
+        operatorRole: operator.role || 'operator'
+      });
+    }
+    const rows = [...byKey.values()].sort((a, b) =>
+      (parseAgencyRowDate(b.date)?.getTime() || 0) - (parseAgencyRowDate(a.date)?.getTime() || 0) ||
+      String(a.operatorName || '').localeCompare(String(b.operatorName || ''))
+    );
+    const total = Math.round(rows.filter(row => !row.gift).reduce((sum, row) => sum + Number(row.amount || 0), 0) * 100) / 100;
+    const giftsTotal = Math.round(rows.filter(row => row.gift).reduce((sum, row) => sum + Number(row.amount || 0), 0) * 100) / 100;
+    res.json({ ok: true, live: true, year: yearRange.year, month: monthRange.month, from, to, profileId: requestedProfileId, count: rows.length, total, giftsTotal, profiles, rows });
+  } catch (error) {
+    res.status(error.status || 400).json({ ok: false, error: error.message || 'Could not load dashboard bonuses' });
   }
 });
 
@@ -4427,6 +5222,96 @@ app.post('/api/admin/operator-balances/today/refresh', requireAdminPanelViewer, 
     });
   } catch (error) {
     res.status(error.status || 400).json({ ok: false, error: error.message || 'Could not refresh operator balances' });
+  }
+});
+
+app.post('/api/admin/operator-balances/day/refresh', requireAdminPanelViewer, async (req, res) => {
+  const db = readDb();
+  const user = db.users?.[req.user.id];
+  if (!user) return res.status(404).json({ ok: false, error: 'User not found' });
+  try {
+    const requester = resolveAdminPanelRequester(db, user, req.body?.adminId);
+    const date = adminPanelEffectiveDate(req.body?.date);
+    const result = await refreshAdminOperatorBalancesForDay(db, requester, date);
+    writeDb(db);
+    res.json({
+      ok: true,
+      mentorViewingAdminId: requester.id,
+      selectedAdminId: user.role === 'director' && requester.role === 'admin' ? requester.id : '',
+      adminPanelAdmins: user.role === 'director' ? adminPanelAdminsForOwner(db) : [],
+      readOnly: ['director', 'mentor'].includes(user.role),
+      ...result
+    });
+  } catch (error) {
+    res.status(error.status || 400).json({ ok: false, error: error.message || 'Could not refresh operator balances' });
+  }
+});
+
+app.post('/api/agencyos/dashboard/operators/month-actual/refresh', requireAdminPanelViewer, async (req, res) => {
+  const db = readDb();
+  const user = db.users?.[req.user.id];
+  if (!user) return res.status(404).json({ ok: false, error: 'User not found' });
+  try {
+    const requester = resolveAdminPanelRequester(db, user, req.body?.adminId);
+    const yearRange = dashboardYearRange(req.body?.year);
+    const monthRange = dashboardMonthRange(yearRange.year, req.body?.month);
+    const today = dreamBusinessDateKey(new Date());
+    const targetDay = normalizeAgencyDate(req.body?.date || today, new Date());
+    const refreshDay = targetDay < monthRange.from
+      ? monthRange.from
+      : (targetDay > monthRange.to ? monthRange.to : targetDay);
+    const maxDays = Math.max(1, Math.min(6, Number(req.body?.limit || 4) || 4));
+    db.agencyDashboardBalanceRefreshes ||= {};
+    const requesterKey = String(requester.id || '');
+    db.agencyDashboardBalanceRefreshes[requesterKey] ||= {};
+    const refreshMarks = db.agencyDashboardBalanceRefreshes[requesterKey];
+    const autoFill = req.body?.auto === true;
+    const forceToday = req.body?.force === true;
+    const staleMs = Math.max(5, Math.min(120, Number(req.body?.staleMinutes || 15) || 15)) * 60 * 1000;
+    const nowMs = Date.now();
+    const monthDays = dateKeysInRange(monthRange.from, refreshDay).filter(day => day <= today);
+    const pastMissingDays = autoFill
+      ? monthDays.filter(day => day < today && !refreshMarks[day]).slice(0, Math.max(0, maxDays - 1))
+      : [];
+    const todayMarkMs = Date.parse(refreshMarks[today] || '');
+    const shouldRefreshToday = today >= monthRange.from && today <= monthRange.to && today <= refreshDay && (
+      forceToday ||
+      !Number.isFinite(todayMarkMs) ||
+      nowMs - todayMarkMs > staleMs
+    );
+    const refreshDays = [...pastMissingDays];
+    if (shouldRefreshToday && refreshDays.length < maxDays) refreshDays.push(today);
+    if (!autoFill && !forceToday && refreshDays.length === 0 && refreshDay <= today && !refreshMarks[refreshDay]) {
+      refreshDays.push(refreshDay);
+    }
+    const remainingMissingBefore = monthDays.filter(day => day < today && !refreshMarks[day]).length;
+    const refreshed = [];
+    const skipped = [];
+    for (const day of refreshDays) {
+      if (day !== today && refreshMarks[day]) {
+        skipped.push(day);
+        continue;
+      }
+      await refreshAdminOperatorBalancesForDay(db, requester, day);
+      refreshMarks[day] = new Date().toISOString();
+      refreshed.push(day);
+    }
+    const remainingMissing = monthDays.filter(day => day < today && !refreshMarks[day]).length;
+    if (!refreshDays.length) skipped.push(refreshDay);
+    writeDb(db);
+    res.json({
+      ok: true,
+      year: yearRange.year,
+      month: monthRange.month,
+      refreshed,
+      skipped,
+      remainingMissing,
+      remainingMissingBefore,
+      from: monthRange.from,
+      to: refreshDay
+    });
+  } catch (error) {
+    res.status(error.status || 400).json({ ok: false, error: error.message || 'Could not refresh monthly balances' });
   }
 });
 
@@ -4648,6 +5533,9 @@ app.get('/api/admin/users', requireUser, (req, res) => {
     users = Object.values(db.users).filter(user => ['admin', 'mentor', 'operator'].includes(user.role) && user.active !== false);
   } else if (req.user.role === 'admin') {
     users = Object.values(db.users).filter(user => user.role === 'operator' && user.managerId === req.user.id && user.active !== false);
+  } else if (req.user.role === 'operator') {
+    const manager = db.users?.[req.user.managerId];
+    users = manager && manager.role === 'admin' && manager.active !== false ? [manager] : [];
   } else if (req.user.role !== 'operator') {
     return res.status(403).json({ ok: false, error: 'Administrator access required' });
   }
@@ -4696,14 +5584,6 @@ app.post('/api/admin/profiles', requireAdmin, (req, res) => {
   delete profile.archivedAt;
   if (req.user.role === 'admin') {
     profile.ownerAdminId = req.user.id;
-    const storedAdmin = db.users[req.user.id];
-    storedAdmin.profileIds ||= [];
-    const wasAssigned = storedAdmin.profileIds.includes(id);
-    if (!wasAssigned) storedAdmin.profileIds.push(id);
-    const hasAssignmentHistory = Array.isArray(db.assignmentHistory?.[id]) && db.assignmentHistory[id].length > 0;
-    if (!wasAssigned && !hasAssignmentHistory) {
-      updateProfileAssignmentHistory(db, id, req.user.id, req.user.id, new Date());
-    }
   } else if (req.user.role === 'director') {
     db.users[req.user.id].profileIds ||= [];
   }
@@ -4764,8 +5644,7 @@ app.patch('/api/admin/profiles/:id/assignment', requireAdmin, (req, res) => {
   if (unassignFromAdmin) {
     db.users[req.user.id].profileIds = (db.users[req.user.id].profileIds || []).filter(profileId => profileId !== id);
   }
-  const directorAssignsAdminOwner = req.user.role === 'director' && assignee?.role === 'admin';
-  if (assignee && !directorAssignsAdminOwner) {
+  if (assignee) {
     assignee.profileIds ||= [];
     if (!assignee.profileIds.includes(id)) assignee.profileIds.push(id);
     profile.active = true;
@@ -4787,7 +5666,7 @@ app.patch('/api/admin/profiles/:id/assignment', requireAdmin, (req, res) => {
   } else if (req.user.role === 'admin' && !profile.ownerAdminId) {
     profile.ownerAdminId = req.user.id;
   }
-  const nextWorkingOperatorId = directorAssignsAdminOwner || returnToOwner ? '' : assigneeId;
+  const nextWorkingOperatorId = returnToOwner ? '' : assigneeId;
   updateProfileAssignmentHistory(db, id, nextWorkingOperatorId, req.user.id, new Date(), previousAssignee?.id || '');
 
   writeDb(db);
@@ -4818,7 +5697,9 @@ app.patch('/api/agencyos/profiles/:id/assignment', requireAdmin, (req, res) => {
       return res.status(403).json({ ok: false, error: 'This profile belongs to another administrator' });
     }
     const operator = operatorId ? db.users?.[operatorId] : null;
-    if (operatorId && (!operator || operator.role !== 'operator' || String(operator.managerId || '') !== String(req.user.id || ''))) {
+    const adminTakesOwnProfile = operator && operator.role === 'admin' && String(operator.id || '') === String(req.user.id || '');
+    const managedOperator = operator && operator.role === 'operator' && String(operator.managerId || '') === String(req.user.id || '');
+    if (operatorId && (!operator || (!adminTakesOwnProfile && !managedOperator))) {
       return res.status(400).json({ ok: false, error: 'Operator not found' });
     }
     adminId = req.user.id;
@@ -4830,8 +5711,8 @@ app.patch('/api/agencyos/profiles/:id/assignment', requireAdmin, (req, res) => {
   if (adminId && (!admin || admin.role !== 'admin')) {
     return res.status(400).json({ ok: false, error: 'Administrator not found' });
   }
-  if (operatorId && (!operator || operator.role !== 'operator')) {
-    return res.status(400).json({ ok: false, error: 'Operator not found' });
+  if (operatorId && (!operator || !['admin', 'operator'].includes(operator.role))) {
+    return res.status(400).json({ ok: false, error: 'Worker not found' });
   }
 
   if (adminId) {
@@ -4842,13 +5723,13 @@ app.patch('/api/agencyos/profiles/:id/assignment', requireAdmin, (req, res) => {
 
   const previousAssignee = currentAssignedUserForProfile(db, id);
   for (const user of Object.values(db.users || {})) {
-    if (user.role === 'operator') {
+    if (['admin', 'operator'].includes(user.role)) {
       user.profileIds = (user.profileIds || []).filter(profileId => String(profileId) !== id);
     }
   }
   if (operator) {
     operator.active = true;
-    if (adminId && admin?.role === 'admin') operator.managerId = adminId;
+    if (operator.role === 'operator' && adminId && admin?.role === 'admin') operator.managerId = adminId;
     operator.profileIds ||= [];
     if (!operator.profileIds.includes(id)) operator.profileIds.push(id);
   }
@@ -5263,8 +6144,8 @@ app.delete('/api/admin/profiles/:id', requireAdmin, (req, res) => {
   const id = String(req.params.id);
   const profile = db.profiles[id];
   if (!profile) return res.status(404).json({ ok: false, error: 'Profile not found' });
-  if (req.user.role !== 'director') {
-    return res.status(403).json({ ok: false, error: 'Only the owner can delete profiles' });
+  if (req.user.role !== 'director' && String(profile.ownerAdminId || '') !== String(req.user.id || '')) {
+    return res.status(403).json({ ok: false, error: 'Only the owner or assigned administrator can delete profiles' });
   }
 
   const archivedAt = new Date();
@@ -5589,7 +6470,77 @@ app.use('/api/workspace', (req, res, next) => {
   next();
 });
 
+app.post('/api/workspace/clear-cache', (req, res) => {
+  const db = readDb();
+  const profile = getProfileStore(db, req.profileId, true);
+  const oldLetters = Array.isArray(profile.workspaceInbox) ? profile.workspaceInbox.length : 0;
+  const oldMedia = Array.isArray(profile.workspaceMediaGallery) ? profile.workspaceMediaGallery.length : 0;
+  const removedBytes = removeWorkspaceAttachmentCacheForProfile(req.profileId);
+  profile.workspaceInbox = [];
+  profile.workspaceMediaGallery = [];
+  profile.workspaceMediaGallerySyncedAt = '';
+  profile.updatedAt = new Date().toISOString();
+  writeDb(db);
+  res.json({
+    ok: true,
+    cleared: {
+      letters: oldLetters,
+      media: oldMedia,
+      attachmentBytes: removedBytes
+    }
+  });
+});
+
 app.post('/api/workspace/read-letter', async (req, res) => {
+  const rawUrl = String(req.body?.messageLink || req.body?.url || '').trim();
+  let url;
+  try {
+    url = new URL(rawUrl, DREAM_INBOX_URL);
+  } catch {
+    return res.status(400).json({ ok: false, error: 'Letter link is invalid' });
+  }
+  if (!/(^|\.)dream-singles\.com$/i.test(url.hostname)) {
+    return res.status(400).json({ ok: false, error: 'Letter link is not Dream Singles' });
+  }
+
+  try {
+    const db = readDb();
+    const savedLetter = findSavedWorkspaceLetterByMessageLink(db, req.profileId, url.href);
+    if (!dreamSessions.has(req.profileId)) {
+      await openDreamSession(db, req.user, req.profileId);
+    }
+    const page = await dreamSessionFetch(req.profileId, url.href);
+    let letter = collectWorkspaceLetterHtml(
+      page.html,
+      page.url || url.href,
+      String(req.body?.name || '').trim(),
+      String(req.body?.id || '').trim(),
+      String(req.body?.direction || '').trim()
+    );
+    letter = mergeSavedWorkspaceLetterDetails(letter, savedLetter);
+    if (letter.requiresLogin) throw new Error('Dream Singles login is required');
+    if (!letter.bodyText && !letter.conversation?.length && !letter.attachments?.length) {
+      throw new Error('Could not read letter text');
+    }
+    res.json({ ok: true, letter: { ...letter, messageLink: rawUrl } });
+  } catch (error) {
+    const fallbackDb = readDb();
+    const savedLetter = findSavedWorkspaceLetterByMessageLink(fallbackDb, req.profileId, rawUrl);
+    const fallbackLetter = mergeSavedWorkspaceLetterDetails({
+      requiresLogin: false,
+      sourceUrl: rawUrl,
+      replyUrl: rawUrl,
+      attachments: [],
+      conversation: []
+    }, savedLetter);
+    if (fallbackLetter.bodyText || fallbackLetter.conversation?.length || fallbackLetter.attachments?.length) {
+      return res.json({ ok: true, letter: { ...fallbackLetter, messageLink: rawUrl, liveError: error.message || '' } });
+    }
+    res.status(error.status || 500).json({ ok: false, error: error.message || 'Could not read letter text' });
+  }
+});
+
+app.post('/api/workspace/message-history', async (req, res) => {
   const rawUrl = String(req.body?.messageLink || req.body?.url || '').trim();
   let url;
   try {
@@ -5606,21 +6557,20 @@ app.post('/api/workspace/read-letter', async (req, res) => {
       const db = readDb();
       await openDreamSession(db, req.user, req.profileId);
     }
-    const page = await dreamSessionFetch(req.profileId, url.href);
-    const letter = collectWorkspaceLetterHtml(
-      page.html,
-      page.url || url.href,
-      String(req.body?.name || '').trim(),
-      String(req.body?.id || '').trim(),
-      String(req.body?.direction || '').trim()
+    const history = await collectWorkspaceMessageHistory(
+      req.profileId,
+      url.href,
+      String(req.body?.name || '').trim()
     );
-    if (letter.requiresLogin) throw new Error('Dream Singles login is required');
-    if (!letter.bodyText && !letter.conversation?.length && !letter.attachments?.length) {
-      throw new Error('Could not read letter text');
-    }
-    res.json({ ok: true, letter: { ...letter, messageLink: rawUrl } });
+    res.json({
+      ok: true,
+      composeUrl: history.composeUrl,
+      sourceUrl: history.sourceUrl,
+      source: history.source,
+      entries: history.entries || []
+    });
   } catch (error) {
-    res.status(error.status || 500).json({ ok: false, error: error.message || 'Could not read letter text' });
+    res.status(error.status || 500).json({ ok: false, error: error.message || 'Could not load message history' });
   }
 });
 
@@ -5681,11 +6631,29 @@ app.post('/api/workspace/scan-inbox', async (req, res) => {
       page: req.body?.page || 0,
       targets: Array.isArray(req.body?.targets) ? req.body.targets : [],
       stopAtShortPage: req.body?.stopAtShortPage === true,
+      stopAtExisting: req.body?.stopAtExisting === true,
       shortPageSize: 12,
       replaceEmpty: req.body?.replaceEmpty === true,
       persist: req.body?.persist === false ? false : true
     });
-    res.json({ ok: true, imported: sync.imported || 0, letters: sync.letters || [], lastPage: sync.lastPage || 1 });
+    let favorites = null;
+    if (req.body?.syncFavorites !== false && req.body?.persist !== false) {
+      try {
+        favorites = await syncDreamSiteFavorites(req.profileId);
+      } catch (error) {
+        console.warn('[workspace] Could not sync Dream favorites:', error.message || error);
+      }
+    }
+    const db = readDb();
+    const profile = getProfileStore(db, req.profileId);
+    const letters = Array.isArray(profile?.workspaceInbox) ? profile.workspaceInbox : (sync.letters || []);
+    res.json({
+      ok: true,
+      imported: sync.imported || 0,
+      letters,
+      lastPage: sync.lastPage || 1,
+      favorites
+    });
   } catch (error) {
     res.status(error.status || 500).json({ ok: false, error: error.message || 'Could not scan Dream Singles inbox' });
   }
@@ -5757,6 +6725,89 @@ app.post('/api/workspace/online-men', async (req, res) => {
     res.json({ ok: true, online: statuses.length, statuses, checkedAt });
   } catch (error) {
     res.status(error.status || 500).json({ ok: false, error: error.message || 'Could not load online men' });
+  }
+});
+
+app.post('/api/workspace/check-activity', async (req, res) => {
+  const id = String(req.body?.id || '').trim();
+  if (!/^\d{4,}$/.test(id)) return res.status(400).json({ ok: false, error: 'Man ID is invalid' });
+
+  let url;
+  try {
+    url = new URL(String(req.body?.profileUrl || `https://www.dream-singles.com/${id}.html`).trim(), 'https://www.dream-singles.com/');
+  } catch {
+    return res.status(400).json({ ok: false, error: 'Profile link is invalid' });
+  }
+  if (!/(^|\.)dream-singles\.com$/i.test(url.hostname)) {
+    return res.status(400).json({ ok: false, error: 'Profile link is not Dream Singles' });
+  }
+
+  try {
+    const db = readDb();
+    if (!dreamSessions.has(req.profileId)) {
+      await openDreamSession(db, req.user, req.profileId);
+    }
+    const page = await dreamSessionFetch(req.profileId, url.href);
+    let presence = extractDreamProfilePresence(page.html);
+
+    if (!presence.onlineNow) {
+      try {
+        const favoritesUrl = 'https://www.dream-singles.com/members/connections/myFavorites?all=1&folder=-1';
+        const favoritesPage = await dreamSessionFetch(req.profileId, favoritesUrl);
+        const statuses = collectDreamOnlineFavorites(favoritesPage.html, favoritesPage.url || favoritesUrl);
+        if (statuses.some(item => String(item.id || '') === id && item.onlineNow === true)) {
+          presence = { onlineNow: true, lastActivityText: 'Online now' };
+        }
+      } catch {}
+    }
+
+    const freshDb = readDb();
+    const profile = getProfileStore(freshDb, req.profileId, true);
+    const checkedAt = new Date().toISOString();
+    const lastActivityText = presence.onlineNow ? 'Online now' : String(presence.lastActivityText || '').trim().slice(0, 100);
+    profile.men ||= {};
+    if (!profile.men[id]) {
+      const letter = Array.isArray(profile.workspaceInbox)
+        ? profile.workspaceInbox.find(item => String(item?.id || '') === id)
+        : null;
+      profile.men[id] = {
+        id,
+        name: String(letter?.name || req.body?.name || `Man ${id}`).trim(),
+        photoUrl: String(letter?.photoUrl || '').trim(),
+        profileLink: url.href,
+        createdAt: checkedAt
+      };
+    }
+    profile.men[id].onlineNow = presence.onlineNow === true;
+    profile.men[id].lastActivityText = lastActivityText;
+    profile.men[id].onlineCheckedAt = checkedAt;
+    profile.men[id].updatedAt = checkedAt;
+    profile.men[id].profileLink ||= url.href;
+
+    if (Array.isArray(profile.workspaceInbox)) {
+      profile.workspaceInbox = profile.workspaceInbox.map(letter => String(letter?.id || '') === id
+        ? {
+            ...letter,
+            onlineNow: profile.men[id].onlineNow,
+            lastActivityText,
+            onlineCheckedAt: checkedAt,
+            profileLink: letter.profileLink || url.href
+          }
+        : letter);
+    }
+    profile.updatedAt = checkedAt;
+    writeDb(freshDb);
+    res.json({
+      ok: true,
+      presence: {
+        onlineNow: profile.men[id].onlineNow,
+        lastActivityText,
+        onlineCheckedAt: checkedAt,
+        sourceUrl: page.url || url.href
+      }
+    });
+  } catch (error) {
+    res.status(error.status || 500).json({ ok: false, error: error.message || 'Could not check activity' });
   }
 });
 
@@ -6458,6 +7509,49 @@ app.patch('/api/men/:id/status', (req, res) => {
 
   writeDb(db);
 
+  res.json({ ok: true, man: profile.men[id] });
+});
+
+app.patch('/api/men/:id/presence', (req, res) => {
+  const db = readDb();
+  const id = String(req.params.id);
+  const profile = getProfileStore(db, req.profileId, true);
+  const activityText = String(req.body?.lastActivityText || '').trim().slice(0, 100);
+  const onlineNow = req.body?.onlineNow === true || /^Online\s+now$/i.test(activityText);
+  const checkedAt = new Date().toISOString();
+
+  profile.men ||= {};
+  if (!profile.men[id]) {
+    const letter = Array.isArray(profile.workspaceInbox)
+      ? profile.workspaceInbox.find(item => String(item?.id || '') === id)
+      : null;
+    profile.men[id] = {
+      id,
+      name: String(letter?.name || `Man ${id}`).trim(),
+      photoUrl: String(letter?.photoUrl || '').trim(),
+      profileLink: String(letter?.profileLink || `https://www.dream-singles.com/${id}.html`).trim(),
+      createdAt: checkedAt
+    };
+  }
+
+  profile.men[id].onlineNow = onlineNow;
+  profile.men[id].lastActivityText = onlineNow ? 'Online now' : activityText;
+  profile.men[id].onlineCheckedAt = checkedAt;
+  profile.men[id].updatedAt = checkedAt;
+
+  if (Array.isArray(profile.workspaceInbox)) {
+    profile.workspaceInbox = profile.workspaceInbox.map(letter => String(letter?.id || '') === id
+      ? {
+          ...letter,
+          onlineNow,
+          lastActivityText: profile.men[id].lastActivityText,
+          onlineCheckedAt: checkedAt
+        }
+      : letter);
+  }
+
+  profile.updatedAt = checkedAt;
+  writeDb(db);
   res.json({ ok: true, man: profile.men[id] });
 });
 

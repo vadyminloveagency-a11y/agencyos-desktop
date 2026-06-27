@@ -13,7 +13,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=20260626-app-update-1">
+  <link rel="stylesheet" href="style.css?v=20260627-inbox-parent-frame-20">
   <style>
     body.mandarin-home-active { min-height: 100vh !important; overflow: hidden !important; background: #0f1626 !important; }
     body.mandarin-home-active .app-layout,
@@ -112,12 +112,6 @@
       <button id="chatFavoritesNavBtn" class="sidebar-link" type="button">
         <span class="sidebar-link-icon">&#128172;</span>
         <span>Chat Favorite</span>
-      </button>
-      <button id="googleDriveNavBtn" class="sidebar-link" type="button">
-        <span class="sidebar-link-icon sidebar-link-icon-drive" aria-hidden="true">
-          <img src="assets/google-drive.png?v=20260623-drive-icon-source-2" alt="">
-        </span>
-        <span>Google Drive</span>
       </button>
       <button id="myStatsNavBtn" class="sidebar-link sidebar-link-stats hidden" type="button">
         <span class="sidebar-link-icon" aria-hidden="true">📊</span>
@@ -262,7 +256,7 @@
     </main>
 
     <main id="workspaceView" class="workspace-embed-view hidden">
-      <iframe id="workspaceEmbedFrame" class="workspace-embed-frame" src="workspace.html?embedded=1&v=20260626-no-empty-letter-pages-1" title="Inbox"></iframe>
+      <iframe id="workspaceEmbedFrame" class="workspace-embed-frame" src="workspace.html?embedded=1&v=20260626-live-update-1" title="Inbox"></iframe>
     </main>
 
     <main id="myStatsView" class="my-stats-view hidden">
@@ -447,7 +441,7 @@
         </span>
         <span>Dashboard</span>
       </button>
-      <button class="agency-shell-nav-item" type="button" data-agency-view="inbox">
+      <button class="agency-shell-nav-item" type="button" data-agency-view="inbox" data-director-hidden="true">
         <span class="agency-shell-nav-icon agency-shell-nav-icon-inbox" aria-hidden="true">
           <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
             <path d="M4 5.5h16v10.2a2.8 2.8 0 0 1-2.8 2.8H6.8A2.8 2.8 0 0 1 4 15.7V5.5Z"/>
@@ -458,7 +452,7 @@
         </span>
         <span>Inbox</span>
       </button>
-      <button class="agency-shell-nav-item" type="button" data-agency-view="favorites">
+      <button class="agency-shell-nav-item" type="button" data-agency-view="favorites" data-director-hidden="true">
         <span class="agency-shell-nav-icon agency-shell-nav-icon-favorites" aria-hidden="true">
           <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
             <path d="m12 3.6 2.65 5.37 5.92.86-4.29 4.18 1.01 5.9L12 17.13l-5.29 2.78 1.01-5.9-4.29-4.18 5.92-.86L12 3.6Z"/>
@@ -468,7 +462,7 @@
         </span>
         <span>Favorites</span>
       </button>
-      <button class="agency-shell-nav-item" type="button" data-agency-view="letterbot">
+      <button class="agency-shell-nav-item" type="button" data-agency-view="letterbot" data-director-hidden="true">
         <span class="agency-shell-nav-icon agency-shell-nav-icon-letterbot" aria-hidden="true">
           <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
             <path d="M3.5 7.5h10.7a2.3 2.3 0 0 1 2.3 2.3v6.4a2.3 2.3 0 0 1-2.3 2.3H5.8a2.3 2.3 0 0 1-2.3-2.3V7.5Z"/>
@@ -479,7 +473,7 @@
         </span>
         <span>LetterBot</span>
       </button>
-      <button class="agency-shell-nav-item" type="button" data-agency-view="sender">
+      <button class="agency-shell-nav-item" type="button" data-agency-view="sender" data-director-hidden="true">
         <span class="agency-shell-nav-icon agency-shell-nav-icon-sender" aria-hidden="true">
           <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
             <path d="M21 4 10 15"/>
@@ -530,8 +524,34 @@
   <main class="agency-shell-main" aria-label="Agency workspace">
     <div class="agency-home-toolbar" aria-label="Page controls">
       <button id="agencyBackBtn" type="button" title="Back" aria-label="Back">‹</button>
-      <button id="agencyRefreshBtn" type="button" title="Refresh" aria-label="Refresh">↻</button>
-      <button id="agencyAppUpdateBtn" class="agency-app-update-btn" type="button" title="Check for updates" aria-label="Check for updates">Update</button>
+      <button id="agencyRefreshBtn" class="agency-data-refresh-btn" type="button" title="Reload page" aria-label="Reload page">↻</button>
+      <button id="agencyAppUpdateBtn" class="agency-app-update-btn" type="button" title="Check app updates" aria-label="Check app updates">App Update</button>
+      <button id="agencyGoogleDriveBtn" class="agency-drive-toolbar-btn" type="button" title="Google Drive" aria-label="Google Drive">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
+          <path d="M9.3 4.2h5.4l6.3 10.9-2.7 4.7H5.7L3 15.1 9.3 4.2Z"></path>
+          <path d="M9.3 4.2 12 8.9"></path>
+          <path d="M14.7 4.2 9.8 12.6"></path>
+          <path d="M3 15.1h5.4"></path>
+          <path d="M15.6 15.1H21"></path>
+          <path d="M8.4 15.1 5.7 19.8"></path>
+          <path d="M15.6 15.1 18.3 19.8"></path>
+        </svg>
+      </button>
+      <button id="agencyClearCacheBtn" class="agency-clear-cache-btn" type="button" title="Clear local letter cache" aria-label="Clear local letter cache">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
+          <path d="M3 6h18"></path>
+          <path d="M8 6V4h8v2"></path>
+          <path d="M6 6l1 14h10l1-14"></path>
+          <path d="M10 10v6"></path>
+          <path d="M14 10v6"></path>
+        </svg>
+      </button>
+      <button id="agencySettingsBtn" class="agency-settings-btn" type="button" title="Translator settings" aria-label="Translator settings">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
+          <circle cx="12" cy="12" r="3.2"></circle>
+          <path d="M19.4 15a1.7 1.7 0 0 0 .34 1.86l.04.04a2 2 0 1 1-2.82 2.82l-.04-.04A1.7 1.7 0 0 0 15 19.4a1.7 1.7 0 0 0-1 1.56V21a2 2 0 1 1-4 0v-.04a1.7 1.7 0 0 0-1-1.56 1.7 1.7 0 0 0-1.86.34l-.04.04a2 2 0 1 1-2.82-2.82l.04-.04A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-1.56-1H3a2 2 0 1 1 0-4h.04A1.7 1.7 0 0 0 4.6 9a1.7 1.7 0 0 0-.34-1.86l-.04-.04A2 2 0 1 1 7.04 4.28l.04.04A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1-1.56V3a2 2 0 1 1 4 0v.04a1.7 1.7 0 0 0 1 1.56 1.7 1.7 0 0 0 1.86-.34l.04-.04a2 2 0 1 1 2.82 2.82l-.04.04A1.7 1.7 0 0 0 19.4 9c.23.6.82 1 1.56 1H21a2 2 0 1 1 0 4h-.04a1.7 1.7 0 0 0-1.56 1Z"></path>
+        </svg>
+      </button>
       <button id="agencyZoomOutBtn" type="button" title="Zoom out" aria-label="Zoom out">−</button>
       <button id="agencyZoomInBtn" type="button" title="Zoom in" aria-label="Zoom in">+</button>
     </div>
@@ -551,8 +571,8 @@
         <div class="agency-account-tabs" role="tablist" aria-label="Account manager sections">
           <button class="agency-account-tab active" type="button" data-agency-account-tab="ladies" role="tab" aria-selected="true">Ladies</button>
           <button class="agency-account-tab" type="button" data-agency-account-tab="operators" role="tab" aria-selected="false">Operators</button>
-          <button id="agencyTranslatorSettingsBtn" class="agency-account-tab agency-translator-settings-btn" type="button" data-agency-account-tab="translator" role="tab" aria-selected="false">Translator</button>
           <button id="agencySalarySettingsBtn" class="agency-account-tab agency-salary-settings-btn" type="button" data-agency-account-tab="salary" role="tab" aria-selected="false">Salary %</button>
+          <button id="agencyAdminSettingsBtn" class="agency-account-tab agency-admin-settings-btn hidden" type="button" data-agency-account-tab="agency-admin" role="tab" aria-selected="false">Agency Admin</button>
         </div>
         <button id="agencyAddProfileBtn" class="agency-add-profile-btn" type="button">+ Add Profile</button>
       </div>
@@ -644,6 +664,37 @@
           </div>
         </div>
       </div>
+      <div id="agencyAdminPanel" class="agency-translator-panel agency-admin-panel hidden">
+        <div class="agency-translator-window agency-admin-window">
+          <div class="agency-translator-header">
+            <div>
+              <h2>Agency Admin</h2>
+              <p>Login used by the server to refresh operator balances.</p>
+            </div>
+            <div class="agency-salary-actions">
+              <button id="agencyAdminTestBtn" class="agency-salary-secondary" type="button">Test</button>
+              <button id="agencyAdminSaveBtn" class="agency-salary-primary" type="button">Save</button>
+            </div>
+          </div>
+          <div class="agency-translator-grid agency-admin-grid">
+            <label class="agency-translator-key">
+              <span>Agency URL</span>
+              <input id="agencyAdminUrl" type="url" autocomplete="off" placeholder="https://agency.dream-singles.com">
+            </label>
+            <label>
+              <span>Login</span>
+              <input id="agencyAdminLogin" type="text" autocomplete="off" placeholder="Agency admin login">
+            </label>
+            <label>
+              <span>Password</span>
+              <input id="agencyAdminPassword" type="password" autocomplete="new-password" placeholder="Agency admin password">
+            </label>
+          </div>
+          <div class="agency-translator-footer">
+            <div id="agencyAdminStatus" class="agency-salary-status">Agency admin access is not configured.</div>
+          </div>
+        </div>
+      </div>
     </section>
     <section class="agency-inbox-panel hidden" data-agency-panel="inbox" aria-label="Inbox">
       <div id="agencyInboxNoAccess" class="agency-inbox-no-access hidden">
@@ -658,7 +709,7 @@
         <span>Inbox is available only for administrators and operators.</span>
         <button id="agencyInboxAuthorizeBtn" class="agency-section-authorize-btn hidden" type="button">Choose profile to authorize</button>
       </div>
-      <iframe id="agencyInboxFrame" class="agency-inbox-frame" src="workspace.html?embedded=1&v=20260626-no-empty-letter-pages-1" title="Inbox"></iframe>
+      <iframe id="agencyInboxFrame" class="agency-inbox-frame" src="workspace.html?embedded=1&v=20260626-live-update-1" title="Inbox"></iframe>
     </section>
     <section class="agency-favorites-panel hidden" data-agency-panel="favorites" aria-label="Favorites">
       <div id="agencyFavoritesNoAccess" class="agency-inbox-no-access hidden">
@@ -685,8 +736,8 @@
             <button id="agencyTopOnlineBtn" class="agency-top-online-btn" type="button" title="Top Online" aria-label="Top Online" aria-pressed="false">
               <span></span>
             </button>
-            <button id="agencyFavoritesUpdateTodayBtn" class="agency-favorites-action-btn" type="button">Update Today</button>
-            <button id="agencyFavoritesScanAllBtn" class="agency-favorites-action-btn" type="button">Scan All</button>
+            <button id="agencyFavoritesUpdateTodayBtn" class="agency-favorites-action-btn" type="button" title="Update Today: scan today's/recent inbox pages and refresh the men list">Update Today</button>
+            <button id="agencyFavoritesScanAllBtn" class="agency-favorites-action-btn" type="button" title="Scan All: scan more inbox pages according to the page limit">Scan All</button>
           </div>
           <div id="agencyChatFavoritesActions" class="agency-favorites-actions agency-chat-favorites-actions hidden">
             <button id="agencyChatTopOnlineBtn" class="agency-top-online-btn" type="button" title="Top Online" aria-label="Top Online" aria-pressed="false">
@@ -729,11 +780,26 @@
     <section class="agency-dashboard-panel hidden" data-agency-panel="dashboard" aria-label="Dashboard">
       <div class="agency-dashboard-toolbar">
         <select id="agencyDashboardYear" class="agency-dashboard-year" aria-label="Year"></select>
+        <div class="agency-dashboard-actions" aria-label="Balance actions">
+          <button id="agencyDashboardStartBalanceBtn" class="agency-dashboard-action-btn primary" type="button">Total Balance</button>
+          <button id="agencyDashboardBonusesBtn" class="agency-dashboard-action-btn" type="button">Bonuses</button>
+        </div>
         <div id="agencyDashboardMonths" class="agency-dashboard-months" role="tablist" aria-label="Dashboard months"></div>
       </div>
       <div id="agencyDashboardStatus" class="agency-dashboard-status"></div>
       <div id="agencyDashboardList" class="agency-dashboard-list">
         <table class="agency-dashboard-table">
+          <colgroup>
+            <col style="width:5%">
+            <col style="width:17%">
+            <col style="width:16%">
+            <col style="width:16%">
+            <col style="width:6%">
+            <col style="width:10%">
+            <col style="width:9%">
+            <col style="width:9%">
+            <col style="width:12%">
+          </colgroup>
           <thead>
             <tr>
               <th>№</th>
@@ -742,11 +808,66 @@
               <th>Login</th>
               <th>Source</th>
               <th>Income</th>
+              <th>Gifts</th>
               <th>Percent</th>
               <th>Salary</th>
             </tr>
           </thead>
           <tbody id="agencyDashboardRows"></tbody>
+        </table>
+      </div>
+      <div id="agencyDashboardSummary" class="agency-dashboard-summary hidden" aria-live="polite">
+        <span>Total Balance</span>
+        <b id="agencyDashboardSummaryIncome">$0</b>
+        <span>Gifts</span>
+        <b id="agencyDashboardSummaryGifts">$0</b>
+        <span>Salary</span>
+        <b id="agencyDashboardSummarySalary">$0</b>
+      </div>
+      <div id="agencyDashboardBonuses" class="agency-dashboard-bonuses hidden">
+        <div class="agency-dashboard-bonus-filters">
+          <button id="agencyDashboardBonusCalendarBtn" class="agency-dashboard-calendar-chip" type="button" title="Select bonus date" aria-label="Select bonus date">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <rect x="3" y="4" width="18" height="17" rx="3"></rect>
+              <path d="M8 2v4M16 2v4M3 10h18"></path>
+            </svg>
+          </button>
+          <label>
+            <span>From</span>
+            <input id="agencyDashboardBonusFrom" type="date" aria-label="Bonus from date">
+          </label>
+          <label>
+            <span>To</span>
+            <input id="agencyDashboardBonusTo" type="date" aria-label="Bonus to date">
+          </label>
+          <label class="agency-dashboard-bonus-profile-label">
+            <span>Profile</span>
+            <select id="agencyDashboardBonusProfile" aria-label="Bonus profile">
+              <option value="">All profiles</option>
+            </select>
+          </label>
+          <button id="agencyDashboardBonusApplyBtn" class="agency-dashboard-bonus-apply" type="button">Apply</button>
+          <div class="agency-dashboard-bonus-total" aria-live="polite">
+            <span>Total Balance</span>
+            <i id="agencyDashboardBonusLoader" class="agency-dashboard-bonus-loader hidden" aria-hidden="true"></i>
+            <b id="agencyDashboardBonusTotal">$0</b>
+            <span>Gifts</span>
+            <b id="agencyDashboardBonusGifts">$0</b>
+          </div>
+        </div>
+        <table class="agency-dashboard-table agency-dashboard-bonuses-table">
+          <thead>
+            <tr>
+              <th>№</th>
+              <th>Type</th>
+              <th>By Whom</th>
+              <th>Profile</th>
+              <th>Operator</th>
+              <th>Date</th>
+              <th>Amount</th>
+            </tr>
+          </thead>
+          <tbody id="agencyDashboardBonusesRows"></tbody>
         </table>
       </div>
       <div id="agencyDashboardCalendar" class="agency-dashboard-calendar hidden">
@@ -858,6 +979,10 @@
     <label class="login-field">
       <span class="login-field-label">Password</span>
       <input id="passwordInput" type="password" autocomplete="current-password" placeholder="Write your password">
+    </label>
+    <label id="rememberAccessRow" class="remember-access-row">
+      <input id="rememberAccessInput" type="checkbox">
+      <span>Remember me on this computer</span>
     </label>
     <div class="login-actions">
       <button id="accessBtn" type="button">Log In</button>
@@ -1021,6 +1146,34 @@
   </div>
 </div>
 
+<div id="agencyDriveModal" class="add-profile-modal agency-drive-modal hidden">
+  <div class="add-profile-backdrop"></div>
+  <div class="add-profile-window agency-drive-window" role="dialog" aria-modal="true" aria-labelledby="agencyDriveTitle">
+    <div class="agency-drive-header">
+      <div>
+        <h2 id="agencyDriveTitle">Google Drive</h2>
+        <p>Open profile materials in a separate window.</p>
+      </div>
+      <button id="agencyDriveCloseBtn" class="modal-close-button" type="button" aria-label="Close">&times;</button>
+    </div>
+    <div id="agencyDriveList" class="agency-drive-list"></div>
+  </div>
+</div>
+
+<div id="agencySettingsModal" class="add-profile-modal agency-settings-modal hidden">
+  <div class="add-profile-backdrop"></div>
+  <div class="agency-settings-window" role="dialog" aria-modal="true" aria-labelledby="agencySettingsTitle">
+    <div class="agency-settings-modal-header">
+      <div>
+        <h2 id="agencySettingsTitle">Translator API</h2>
+        <p>Add an API key for translation.</p>
+      </div>
+      <button id="agencySettingsCloseBtn" class="modal-close-button" type="button" aria-label="Close">&times;</button>
+    </div>
+    <div id="agencySettingsContent" class="agency-settings-content"></div>
+  </div>
+</div>
+
 <div id="addUserModal" class="add-profile-modal hidden">
   <div class="add-profile-backdrop"></div>
   <div class="add-profile-window" role="dialog" aria-modal="true" aria-labelledby="addUserTitle">
@@ -1168,7 +1321,7 @@
     </div>
   </div>
 </div>
-  <script src="app.js?v=20260626-app-update-1"></script>
+  <script src="app.js?v=20260627-inbox-parent-frame-20"></script>
 </body>
 </html>
 

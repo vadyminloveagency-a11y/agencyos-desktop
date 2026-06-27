@@ -29,8 +29,16 @@ const workspaceDialogSyncStates = new Map();
 const workspaceRowSyncIds = new Set();
 const workspaceLetterPageLoading = new Set();
 const workspaceLetterStripScroll = new Map();
+const workspaceHistorySideScroll = new Map();
 const workspaceLetterVisiblePages = new Map();
 const workspaceLetterKnownEndPages = new Map();
+const workspaceHistoryCache = new Map();
+const workspaceHistoryLoadingIds = new Set();
+let workspaceSelectedHistoryKey = '';
+let workspaceHistoryFilter = sessionStorage.getItem('dream_workspace_history_filter') || 'all';
+if (!['all', 'man'].includes(workspaceHistoryFilter)) workspaceHistoryFilter = 'all';
+let workspaceHistoryPage = Math.max(1, Number(sessionStorage.getItem('dream_workspace_history_page') || 1) || 1);
+const WORKSPACE_HISTORY_PAGE_SIZE = 15;
 
 const extensionRequests = new Map();
 const activeProfileId = localStorage.getItem('dream_crm_profile_id') || '';
@@ -61,6 +69,7 @@ const headerLetters = document.getElementById('workspaceHeaderLetters');
 const composer = document.querySelector('.workspace-composer');
 const reply = document.getElementById('workspaceReply');
 const replyCounter = document.getElementById('workspaceReplyCount');
+const historyBtn = document.getElementById('workspaceHistoryBtn');
 const photoBtn = document.getElementById('workspacePhotoBtn');
 const videoBtn = document.getElementById('workspaceVideoBtn');
 const replyTranslateBtn = document.getElementById('workspaceReplyTranslateBtn');
@@ -92,6 +101,10 @@ const translatorApiKey = document.getElementById('workspaceTranslatorApiKey');
 const translatorState = document.getElementById('workspaceTranslatorState');
 const translatorSave = document.getElementById('workspaceTranslatorSave');
 const translatorTest = document.getElementById('workspaceTranslatorTest');
+const historyModal = document.getElementById('workspaceHistoryModal');
+const historyClose = document.getElementById('workspaceHistoryClose');
+const historyBody = document.getElementById('workspaceHistoryBody');
+const historyMeta = document.getElementById('workspaceHistoryMeta');
 const inboxFilterBtn = document.getElementById('workspaceInboxFilterBtn');
 const readFilterBtn = document.getElementById('workspaceReadFilterBtn');
 const copyReadIdsBtn = document.getElementById('workspaceCopyReadIdsBtn');
@@ -134,7 +147,7 @@ const WORKSPACE_MEDIA_SECTIONS = {
 const WORKSPACE_SYNC_ROWS_KEY = 'dream_workspace_sync_rows';
 const WORKSPACE_SYNC_ROWS_DEFAULT = 10;
 const WORKSPACE_REPLY_SENT_SYNC_ROWS = 3;
-const WORKSPACE_INBOX_SYNC_PAGES = 5;
+const WORKSPACE_INBOX_SYNC_PAGES = 3;
 const WORKSPACE_INBOX_AUTH_REFRESH_PAGES = 3;
 const WORKSPACE_INBOX_BACKGROUND_PAGES = 2;
 const WORKSPACE_INBOX_BACKGROUND_INTERVAL_MS = 60 * 1000;
@@ -158,6 +171,12 @@ function persistWorkspaceListFilter() {
   sessionStorage.setItem('dream_workspace_list_filter', filter);
 }
 persistWorkspaceListFilter();
+workspaceListPage = Math.max(1, Number(sessionStorage.getItem(`${workspaceSessionPrefix}_list_page_${workspaceListFilter}`) || 1) || 1);
+
+function persistWorkspaceListPage(filter = workspaceListFilter) {
+  if (filter !== 'inbox') return;
+  sessionStorage.setItem(`${workspaceSessionPrefix}_list_page_${filter}`, String(Math.max(1, Number(workspaceListPage) || 1)));
+}
 
 if (workspaceEmbedded) {
   document.body.classList.add('workspace-embedded');
@@ -277,8 +296,9 @@ searchInput?.addEventListener('pointerdown', () => {
   searchInput.removeAttribute('readonly');
 }, { once: true });
 [50, 250, 800, 1600].forEach(delay => window.setTimeout(clearWorkspaceSearchAutofill, delay));
-workspaceSelectedId = sessionStorage.getItem(`${workspaceSessionPrefix}_selected_id`) || '';
-workspaceSelectedLetterKey = sessionStorage.getItem(`${workspaceSessionPrefix}_selected_letter_key`) || '';
+workspaceSelectedId = sessionStorage.getItem(`${workspaceSessionPrefix}_selected_id`) || localStorage.getItem(`${workspaceSessionPrefix}_selected_id`) || '';
+workspaceSelectedLetterKey = sessionStorage.getItem(`${workspaceSessionPrefix}_selected_letter_key`) || localStorage.getItem(`${workspaceSessionPrefix}_selected_letter_key`) || '';
+workspaceSelectedHistoryKey = sessionStorage.getItem(`${workspaceSessionPrefix}_selected_history_key`) || localStorage.getItem(`${workspaceSessionPrefix}_selected_history_key`) || '';
 
 window.addEventListener('message', event => {
   if (event.data?.type === 'DREAM_CRM_STATUS') {
@@ -312,7 +332,9 @@ function setProfileSyncRunning(active, message = '') {
   if (refreshBtn) {
     refreshBtn.classList.toggle('syncing', workspaceProfileSyncRunning);
     refreshBtn.setAttribute('aria-busy', workspaceProfileSyncRunning ? 'true' : 'false');
-    refreshBtn.title = workspaceProfileSyncRunning ? (message || 'Syncing Dream Singles') : 'Update inbox';
+    refreshBtn.title = workspaceProfileSyncRunning
+      ? (message || 'Syncing Dream Singles')
+      : 'Update: scan 3 inbox pages, save men, dates and favorites';
   }
   if (!syncStatus) return;
   if (workspaceProfileSyncRunning) {
@@ -327,6 +349,9 @@ function setProfileSyncRunning(active, message = '') {
 function setWorkspaceActionStatus(message = '', button = null) {
   const text = String(message || '').trim();
   if (button) button.title = text || button.getAttribute('aria-label') || button.textContent || 'Action';
+  if (workspaceProfileSyncRunning && refreshBtn) {
+    refreshBtn.title = text || 'Syncing Dream Singles';
+  }
   if (syncStatus) {
     syncStatus.textContent = text;
     syncStatus.hidden = !text;
@@ -589,6 +614,7 @@ function clearHeaderDialog() {
   headerTitle?.classList.remove('hidden');
   headerDialog?.classList.add('hidden');
   headerLetters?.classList.add('hidden');
+  headerLetters?.classList.remove('history-mode');
   if (headerDialog) headerDialog.innerHTML = '';
   if (headerLetters) headerLetters.innerHTML = '';
 }
@@ -608,6 +634,7 @@ function renderHeaderDialog(group) {
   const syncLabel = syncState || 'Sync';
   const isReadMode = workspaceListFilter === 'read';
   const rowSyncing = workspaceRowSyncIds.has(String(group.id || ''));
+  const selectedLetter = selectedLetterFromGroup(group);
   headerTitle?.classList.add('hidden');
   headerDialog?.classList.remove('hidden');
   headerDialog?.classList.toggle('read-mode', isReadMode);
@@ -642,20 +669,41 @@ function rememberSelectedDialog() {
   if (!workspaceSelectedId) return;
   sessionStorage.setItem(`${workspaceSessionPrefix}_selected_id`, workspaceSelectedId);
   sessionStorage.setItem(`${workspaceSessionPrefix}_selected_letter_key`, workspaceSelectedLetterKey || '');
+  sessionStorage.setItem(`${workspaceSessionPrefix}_selected_history_key`, workspaceSelectedHistoryKey || '');
+  localStorage.setItem(`${workspaceSessionPrefix}_selected_id`, workspaceSelectedId);
+  localStorage.setItem(`${workspaceSessionPrefix}_selected_letter_key`, workspaceSelectedLetterKey || '');
+  localStorage.setItem(`${workspaceSessionPrefix}_selected_history_key`, workspaceSelectedHistoryKey || '');
 }
 
 function clearSelectedDialog() {
   workspaceSelectedId = '';
   workspaceSelectedLetterKey = '';
+  workspaceSelectedHistoryKey = '';
   sessionStorage.removeItem(`${workspaceSessionPrefix}_selected_id`);
   sessionStorage.removeItem(`${workspaceSessionPrefix}_selected_letter_key`);
+  sessionStorage.removeItem(`${workspaceSessionPrefix}_selected_history_key`);
+  localStorage.removeItem(`${workspaceSessionPrefix}_selected_id`);
+  localStorage.removeItem(`${workspaceSessionPrefix}_selected_letter_key`);
+  localStorage.removeItem(`${workspaceSessionPrefix}_selected_history_key`);
 }
 
 function parseDateValue(value) {
   const raw = String(value || '').trim();
   if (!raw) return 0;
-  const parsed = Date.parse(raw.replace(' ', 'T'));
-  return Number.isNaN(parsed) ? 0 : parsed;
+  const direct = Date.parse(raw);
+  if (!Number.isNaN(direct)) return direct;
+  const isoLike = Date.parse(raw.replace(' ', 'T'));
+  if (!Number.isNaN(isoLike)) return isoLike;
+  const dreamMatch = raw.match(/^(\d{1,2}):(\d{2})\s*(am|pm)\s*,\s*([A-Za-z]{3,9})\s+(\d{1,2}),\s*(20\d{2})$/i);
+  if (dreamMatch) {
+    const [, hourText, minuteText, meridiem, monthText, dayText, yearText] = dreamMatch;
+    let hours = Number(hourText) || 0;
+    if (/pm/i.test(meridiem) && hours < 12) hours += 12;
+    if (/am/i.test(meridiem) && hours === 12) hours = 0;
+    const parsed = Date.parse(`${monthText} ${dayText}, ${yearText} ${String(hours).padStart(2, '0')}:${minuteText}:00`);
+    if (!Number.isNaN(parsed)) return parsed;
+  }
+  return 0;
 }
 
 function formatWorkspaceDate(value) {
@@ -1193,7 +1241,24 @@ async function testTranslatorSettings() {
 
 async function translateMessage(button) {
   const group = findGroup(workspaceSelectedId);
-  const letter = selectedLetterFromGroup(group);
+  const historyEntry = selectedHistoryEntryForGroup(group);
+  const selectedLetter = selectedLetterFromGroup(group);
+  const historyLetter = historyEntry ? {
+    ...(historyEntry.liveLetter || {}),
+    key: historyEntry.key,
+    direction: historyEntry.direction,
+    dateText: historyEntry.liveLetter?.dateText || historyEntry.dateText || '',
+    bodyText: historyEntry.liveLetter?.bodyText || historyEntry.text || '',
+    conversation: Array.isArray(historyEntry.liveLetter?.conversation) && historyEntry.liveLetter.conversation.length
+      ? historyEntry.liveLetter.conversation
+      : [{
+        direction: historyEntry.direction === 'outgoing' ? 'outgoing' : 'incoming',
+        author: historyEntry.author || group?.name || 'Message',
+        dateText: historyEntry.dateText || '',
+        text: historyEntry.text || ''
+      }]
+  } : null;
+  const letter = historyLetter || selectedLetter;
   const index = Number(button?.dataset?.messageIndex || 0);
   const message = Array.isArray(letter?.conversation) ? letter.conversation[index] : null;
   const text = String(message?.text || letterText(letter) || '').trim();
@@ -1205,7 +1270,7 @@ async function translateMessage(button) {
     return;
   }
 
-  const key = translationKey(letter?.key || workspaceSelectedLetterKey, index);
+  const key = translationKey(letter?.key || workspaceSelectedLetterKey || workspaceSelectedHistoryKey, index);
   if (workspaceTranslationLoading.has(key)) return;
   if (workspaceTranslationResults.has(key)) {
     workspaceTranslationResults.delete(key);
@@ -1368,10 +1433,13 @@ function renderLetterPreviewUnused(item) {
   sendBtn.disabled = false;
 }
 
-function renderWorkspaceSidePanel(letterCards = '') {
+function renderWorkspaceSidePanel(letterCards = '', options = {}) {
+  const title = String(options.title || 'Letters').trim() || 'Letters';
+  const showTitle = options.showTitle !== false;
   return `
     <aside class="workspace-account-panel letters-only" aria-label="Letters">
       <section class="workspace-right-letters">
+        ${showTitle ? `<div class="workspace-right-letters-title">${escapeHtml(title)}</div>` : ''}
         ${letterCards || '<div class="workspace-muted-state compact">No Letters</div>'}
       </section>
     </aside>
@@ -1570,8 +1638,373 @@ function restoreWorkspaceSelectedLetterFromFingerprint(group, fingerprint) {
   return true;
 }
 
+function firstHistoryLetterKey(group) {
+  return historyLetterCandidatesForGroup(group)[0]?.key || '';
+}
+
+function historyLetterCandidatesForGroup(group) {
+  return [...(Array.isArray(group?.letters) ? group.letters : [])]
+    .filter(letter =>
+      letter?.listAnchor !== true &&
+      String(letter?.direction || 'incoming') !== 'outgoing' &&
+      String(letter?.messageLink || '').trim()
+    )
+    .sort((a, b) => parseDateValue(b?.dateText) - parseDateValue(a?.dateText));
+}
+
+function historyLetterForGroup(group) {
+  const candidates = historyLetterCandidatesForGroup(group);
+  if (!candidates.length) return null;
+  const index = Math.floor(Math.random() * candidates.length);
+  return candidates[index] || candidates[0] || null;
+}
+
+function canUseLetterForHistory(letter) {
+  return Boolean(
+    letter &&
+    letter.listAnchor !== true &&
+    String(letter.direction || 'incoming') !== 'outgoing' &&
+    String(letter.messageLink || '').trim()
+  );
+}
+
+function workspaceHistoryCacheKey(group) {
+  return String(group?.key || group?.id || workspaceSelectedId || '').trim();
+}
+
+function workspaceHistoryStorageKey(group) {
+  const key = workspaceHistoryCacheKey(group);
+  return key ? `${workspaceSessionPrefix}_message_history_${key}` : '';
+}
+
+function readWorkspaceHistoryCache(group) {
+  const key = workspaceHistoryCacheKey(group);
+  if (!key) return null;
+  if (workspaceHistoryCache.has(key)) return workspaceHistoryCache.get(key);
+  const storageKey = workspaceHistoryStorageKey(group);
+  if (!storageKey) return null;
+  try {
+    const cached = JSON.parse(sessionStorage.getItem(storageKey) || localStorage.getItem(storageKey) || 'null');
+    if (!cached || !Array.isArray(cached.entries)) return null;
+    workspaceHistoryCache.set(key, cached);
+    sessionStorage.setItem(storageKey, JSON.stringify(cached));
+    return cached;
+  } catch {
+    sessionStorage.removeItem(storageKey);
+    localStorage.removeItem(storageKey);
+    return null;
+  }
+}
+
+function saveWorkspaceHistoryCache(group, cache) {
+  const key = workspaceHistoryCacheKey(group);
+  if (!key || !cache?.entries) return;
+  workspaceHistoryCache.set(key, cache);
+  try {
+    const storageKey = workspaceHistoryStorageKey(group);
+    sessionStorage.setItem(storageKey, JSON.stringify(cache));
+    localStorage.setItem(storageKey, JSON.stringify(cache));
+  } catch {}
+}
+
+function hashString(value = '') {
+  let hash = 2166136261;
+  for (let i = 0; i < String(value).length; i += 1) {
+    hash ^= String(value).charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0).toString(36);
+}
+
+function normalizeWorkspaceHistoryEntries(entries = [], group = {}) {
+  const myName = myProfileName().toLowerCase();
+  const manName = String(group?.name || '').trim().toLowerCase();
+  return (Array.isArray(entries) ? entries : [])
+    .map((item, index) => {
+      const author = String(item?.author || '').trim();
+      const authorLower = author.toLowerCase();
+      const dateText = String(item?.dateText || '').trim();
+      const text = String(item?.text || '').trim();
+      const senderValue = Number(item?.sender);
+      const readByMan = item?.readByMan === true;
+      const attachmentHash = String(item?.attachmentHash || item?.attachment_hash || '').trim();
+      const videoAttachmentHash = String(item?.videoAttachmentHash || item?.video_attachment_hash || '').trim();
+      const direction = readByMan || senderValue === 0 || (myName && authorLower === myName)
+        ? 'outgoing'
+        : (manName && authorLower === manName ? 'incoming' : 'incoming');
+      const keySeed = `${author}|${dateText}|${text.slice(0, 140)}|${index}`.toLowerCase();
+      return {
+        ...item,
+        key: `history:${workspaceHistoryCacheKey(group)}:${index}:${hashString(keySeed)}`,
+        author,
+        dateText,
+        text,
+        direction,
+        readByMan,
+        readAtText: String(item?.readAtText || '').trim(),
+        msgId: String(item?.msgId || item?.msg_id || '').trim(),
+        msgHash: String(item?.msgHash || item?.msg_hash || '').trim(),
+        senderId: String(item?.senderId || item?.sender_id || '').trim(),
+        receiverId: String(item?.receiverId || item?.receiver_id || '').trim(),
+        sentTimestamp: Number(item?.sentTimestamp || item?.sent_datetime || 0) || 0,
+        attachmentHash,
+        videoAttachmentHash,
+        hasPhoto: item?.hasPhoto === true || Boolean(attachmentHash),
+        hasVideo: item?.hasVideo === true || Boolean(videoAttachmentHash),
+        historyUrl: String(item?.historyUrl || '').trim(),
+        liveLetter: item?.liveLetter || null,
+        liveLoading: item?.liveLoading === true,
+        liveError: String(item?.liveError || '').trim(),
+        replyTo: String(item?.replyTo || item?.reply_to || '').trim()
+      };
+    })
+    .filter(item => item.text)
+    .sort((a, b) => parseDateValue(b.dateText) - parseDateValue(a.dateText));
+}
+
+function selectedHistoryEntryForGroup(group) {
+  const cache = readWorkspaceHistoryCache(group);
+  if (!cache?.entries?.length || !workspaceSelectedHistoryKey) return null;
+  return cache.entries.find(item => String(item.key || '') === String(workspaceSelectedHistoryKey)) || null;
+}
+
+function restoreWorkspaceSelectedHistory(group) {
+  if (!workspaceSelectedHistoryKey) return false;
+  const entry = selectedHistoryEntryForGroup(group);
+  if (!entry) return false;
+  workspaceSelectedLetterKey = '';
+  rememberSelectedDialog();
+  if (entry.historyUrl && !entry.liveLetter && !entry.liveLoading) {
+    window.setTimeout(() => {
+      const currentGroup = findGroup(workspaceSelectedId);
+      const currentEntry = selectedHistoryEntryForGroup(currentGroup);
+      if (currentEntry && String(currentEntry.key || '') === String(entry.key || '')) {
+        loadWorkspaceHistoryLetterDetails(currentEntry, currentGroup);
+      }
+    }, 0);
+  }
+  return true;
+}
+
+function renderWorkspaceHistoryPager(totalItems = 0, currentPage = workspaceHistoryPage) {
+  const totalPages = Math.max(1, Math.ceil((Number(totalItems) || 0) / WORKSPACE_HISTORY_PAGE_SIZE));
+  const page = Math.min(totalPages, Math.max(1, Number(currentPage) || 1));
+  if (totalPages <= 1) return '';
+  const pages = new Set([1, totalPages, page, page - 1, page + 1]);
+  if (page <= 3) {
+    pages.add(2);
+    pages.add(3);
+  }
+  if (page >= totalPages - 2) {
+    pages.add(totalPages - 1);
+    pages.add(totalPages - 2);
+  }
+  const cleanPages = [...pages]
+    .filter(item => item >= 1 && item <= totalPages)
+    .sort((a, b) => a - b);
+  const parts = [];
+  let previous = 0;
+  for (const item of cleanPages) {
+    if (previous && item - previous > 1) parts.push('<span class="workspace-history-page-gap">...</span>');
+    parts.push(`<button type="button" data-history-page="${item}" class="${item === page ? 'active' : ''}" ${item === page ? 'aria-current="page"' : ''}>${item}</button>`);
+    previous = item;
+  }
+  return `
+    <div class="workspace-history-pager" aria-label="Message history pages">
+      <button type="button" data-history-page="${Math.max(1, page - 1)}" title="Previous history page" ${page <= 1 ? 'disabled' : ''}>‹</button>
+      ${parts.join('')}
+      <button type="button" data-history-page="${Math.min(totalPages, page + 1)}" title="Next history page" ${page >= totalPages ? 'disabled' : ''}>›</button>
+    </div>
+  `;
+}
+
+function renderWorkspaceHistoryHeader(group) {
+  const cache = readWorkspaceHistoryCache(group);
+  const entries = Array.isArray(cache?.entries) ? cache.entries : [];
+  const filteredCount = workspaceHistoryFilter === 'man'
+    ? entries.filter(entry => entry.direction !== 'outgoing').length
+    : entries.length;
+  const countText = entries.length
+    ? (workspaceHistoryFilter === 'man' ? `${filteredCount} of ${entries.length} loaded` : `${entries.length} loaded`)
+    : 'Ready to load';
+  return `
+    <div class="workspace-history-header-copy">
+      <strong>Message history</strong>
+      <span>${escapeHtml(countText)}</span>
+    </div>
+    <div class="workspace-history-filter" role="tablist" aria-label="Message history filter">
+      <button type="button" data-history-filter="all" class="${workspaceHistoryFilter === 'all' ? 'active' : ''}" aria-selected="${workspaceHistoryFilter === 'all' ? 'true' : 'false'}">All</button>
+      <button type="button" data-history-filter="man" class="${workspaceHistoryFilter === 'man' ? 'active' : ''}" aria-selected="${workspaceHistoryFilter === 'man' ? 'true' : 'false'}">Man</button>
+    </div>
+  `;
+}
+
+function setWorkspaceHistoryFilter(nextFilter, group = findGroup(workspaceSelectedId)) {
+  saveHistorySideScroll(group);
+  workspaceHistoryFilter = nextFilter === 'man' ? 'man' : 'all';
+  workspaceHistoryPage = 1;
+  workspaceSelectedHistoryKey = '';
+  workspaceSelectedLetterKey = '';
+  sessionStorage.setItem('dream_workspace_history_filter', workspaceHistoryFilter);
+  sessionStorage.setItem('dream_workspace_history_page', String(workspaceHistoryPage));
+  rememberSelectedDialog();
+  renderDialog(group);
+}
+
+function archivedIncomingLettersForGroup(group) {
+  return [...(Array.isArray(group?.letters) ? group.letters : [])]
+    .filter(letter => letter?.listAnchor !== true && String(letter?.direction || 'incoming') !== 'outgoing')
+    .sort((a, b) => parseDateValue(b?.dateText) - parseDateValue(a?.dateText));
+}
+
+function renderHistoryLettersPanel(group) {
+  const key = workspaceHistoryCacheKey(group);
+  const cache = readWorkspaceHistoryCache(group);
+  const isLoading = workspaceHistoryLoadingIds.has(key);
+  const entries = Array.isArray(cache?.entries) ? cache.entries : [];
+  const filteredEntries = workspaceHistoryFilter === 'man'
+    ? entries.filter(entry => entry.direction !== 'outgoing')
+    : entries;
+  const totalHistoryPages = Math.max(1, Math.ceil(filteredEntries.length / WORKSPACE_HISTORY_PAGE_SIZE));
+  workspaceHistoryPage = Math.min(totalHistoryPages, Math.max(1, Number(workspaceHistoryPage) || 1));
+  sessionStorage.setItem('dream_workspace_history_page', String(workspaceHistoryPage));
+  const pageStart = (workspaceHistoryPage - 1) * WORKSPACE_HISTORY_PAGE_SIZE;
+  const pageEntries = filteredEntries.slice(pageStart, pageStart + WORKSPACE_HISTORY_PAGE_SIZE);
+  const sourceLetter = historyLetterForGroup(group);
+
+  if (isLoading && !entries.length) {
+    return `
+      <div class="workspace-history-loading-stage">
+        <div class="workspace-history-loading-card">
+          <span class="workspace-history-loading-orb" aria-hidden="true"></span>
+          <strong>Loading message history</strong>
+          <p>Reading Dream Singles live</p>
+        </div>
+      </div>
+    `;
+  }
+
+  if (!entries.length) {
+    return `
+      <div class="workspace-history-side-state ${sourceLetter?.messageLink ? '' : 'error'}">
+        <span class="workspace-empty-icon" aria-hidden="true">&#9993;</span>
+        <strong>${sourceLetter?.messageLink ? 'No History Loaded' : 'No Letter Link'}</strong>
+        <span>${sourceLetter?.messageLink ? 'Click History to load this man' : 'Need at least one saved letter from this man'}</span>
+      </div>
+    `;
+  }
+
+  return `
+    <div class="workspace-history-side">
+      ${renderWorkspaceHistoryPager(filteredEntries.length, workspaceHistoryPage)}
+      <div class="workspace-history-side-list">
+        ${pageEntries.map((entry, index) => {
+          const active = String(entry.key || '') === String(workspaceSelectedHistoryKey || '');
+          const direction = entry.direction === 'outgoing' ? 'outgoing' : 'incoming';
+          const date = formatWorkspaceMessageDate(entry.dateText) || `Message ${pageStart + index + 1}`;
+          const author = entry.author || group?.name || 'Message';
+          const hasMedia = entry.hasPhoto || entry.hasVideo;
+          const mediaKind = entry.hasPhoto ? 'photo' : 'video';
+          const mediaId = String(entry.hasPhoto ? entry.attachmentHash : entry.videoAttachmentHash || '')
+            .replace(entry.hasPhoto ? /^gallery/i : /^video_gallery/i, '')
+            .trim();
+          const mediaHash = entry.hasPhoto ? entry.attachmentHash : entry.videoAttachmentHash;
+          const mediaLabel = entry.hasPhoto && entry.hasVideo
+            ? 'Photo and video attachment'
+            : (entry.hasPhoto ? 'Photo attachment' : 'Video attachment');
+          const mediaBadge = hasMedia
+            ? `<span class="workspace-history-media-badge ${escapeAttr(mediaKind)}" data-history-media-kind="${escapeAttr(mediaKind)}" data-history-media-id="${escapeAttr(mediaId)}" data-history-media-hash="${escapeAttr(mediaHash || '')}" aria-label="${escapeAttr(mediaLabel)}"></span>`
+            : '';
+          return `
+            <button class="workspace-letter-card workspace-history-card ${direction} ${active ? 'active' : ''} ${entry.readByMan ? 'read-by-man' : ''}" type="button" data-history-key="${escapeAttr(entry.key)}" ${entry.historyUrl ? `data-history-url="${escapeAttr(entry.historyUrl)}" title="Open this Dream letter"` : ''}>
+              <span class="workspace-history-card-main">
+                <span class="workspace-history-media-slot" aria-hidden="${mediaBadge ? 'false' : 'true'}">
+                  ${mediaBadge ? `<span class="workspace-history-media">${mediaBadge}</span>` : ''}
+                </span>
+                <span class="workspace-letter-date">
+                  <span>${escapeHtml(date)}</span>
+                </span>
+              </span>
+              <span class="workspace-history-card-status">
+                ${entry.readByMan ? '<span class="workspace-history-read-inline">read</span>' : ''}
+              </span>
+            </button>
+          `;
+        }).join('')}
+      </div>
+    </div>
+  `;
+}
+
+function renderManInboxArchive(group) {
+  const letters = archivedIncomingLettersForGroup(group);
+  const isSyncing = workspaceRowSyncIds.has(String(group?.id || ''));
+  if (!letters.length) {
+    return `
+      <div class="workspace-man-archive-state">
+        ${isSyncing ? '<span class="workspace-letter-spinner" aria-hidden="true"></span>' : '<span class="workspace-empty-icon" aria-hidden="true">&#9993;</span>'}
+        <h1>${isSyncing ? 'Loading inbox letters' : 'No saved inbox letters yet'}</h1>
+        <p>${isSyncing ? 'Scanning Dream inbox in the background' : 'Click this man to load his incoming letters'}</p>
+      </div>
+    `;
+  }
+  return `
+    <div class="workspace-man-archive">
+      <div class="workspace-man-archive-head">
+        <strong>Inbox letters</strong>
+        <span>${letters.length} saved${isSyncing ? ' - updating' : ''}</span>
+      </div>
+      <div class="workspace-man-archive-list">
+        ${letters.map((letter, index) => {
+          const active = String(letter.key || '') === String(workspaceSelectedLetterKey || '');
+          const date = formatWorkspaceDate(letter.dateText) || `Letter ${index + 1}`;
+          const preview = workspaceLetterTooltip(letter.snippet) || workspaceLetterTooltip(letter.bodyText);
+          const hasAttachment = letter.attachmentsHint === true || (Array.isArray(letter.attachments) && letter.attachments.length > 0);
+          const statusBadges = [
+            letter.unread === true ? '<span class="workspace-letter-status-badge unread">Unread</span>' : '',
+            letter.unanswered === true ? '<span class="workspace-letter-status-badge unanswered">No reply</span>' : ''
+          ].filter(Boolean).join('');
+          return `
+            <button class="workspace-letter-card incoming ${active ? 'active' : ''} ${letter.unread ? 'unread' : ''} ${letter.unanswered ? 'unanswered' : ''}" type="button" data-letter-key="${escapeAttr(letter.key || '')}" ${preview ? `data-preview="${escapeAttr(preview)}"` : ''}>
+              <span class="workspace-letter-date">
+                ${hasAttachment ? '<span class="workspace-letter-attachment" aria-label="Attachment"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21.4 10.1 12 19.5a6 6 0 0 1-8.5-8.5l9.4-9.4a4 4 0 0 1 5.7 5.7l-9.5 9.4a2 2 0 0 1-2.8-2.8l8.8-8.8"/></svg></span>' : ''}
+                <span>${escapeHtml(date)}</span>
+              </span>
+              <span class="workspace-letter-meta">
+                <span class="workspace-letter-status">${statusBadges || escapeHtml(group?.name || 'Incoming')}</span>
+              </span>
+            </button>
+          `;
+        }).join('')}
+      </div>
+    </div>
+  `;
+}
+
 function canReplyToLetter(letter) {
   return Boolean(letter && letter.direction !== 'outgoing' && letter.messageLink && !letter.readError);
+}
+
+function historyEntryReplyLetter(entry, group) {
+  if (!entry || entry.direction === 'outgoing' || !entry.historyUrl) return null;
+  return {
+    key: `history-reply:${entry.key}`,
+    id: group?.id || entry.senderId || '',
+    name: group?.name || entry.author || '',
+    direction: 'incoming',
+    messageLink: entry.liveLetter?.replyUrl || entry.liveLetter?.messageLink || entry.historyUrl,
+    dateText: entry.dateText || '',
+    bodyText: entry.liveLetter?.bodyText || entry.text || '',
+    conversation: entry.liveLetter?.conversation || [],
+    attachments: entry.liveLetter?.attachments || [],
+    transientHistoryReply: true
+  };
+}
+
+function selectedReplyLetterForGroup(group) {
+  const selectedLetter = selectedLetterFromGroup(group);
+  if (canReplyToLetter(selectedLetter)) return selectedLetter;
+  return historyEntryReplyLetter(selectedHistoryEntryForGroup(group), group);
 }
 
 function fileToDataUrl(file) {
@@ -1807,7 +2240,7 @@ function renderMediaPicker() {
     const galleryId = workspaceMediaGalleryId(item);
     const idLabel = `${item.kind === 'video' ? 'Video' : 'Photo'}${galleryId ? ` ID ${galleryId}` : ''}`;
     const thumb = mediaSrc
-      ? `<img src="${escapeAttr(mediaSrc)}" alt="" loading="lazy" decoding="async">`
+      ? `<img src="${escapeAttr(mediaSrc)}" alt="" loading="eager" decoding="sync">`
       : `<span>${item.kind === 'video' ? 'Video' : 'Photo'}</span>`;
     return `
       <button type="button" class="workspace-media-tile ${selected ? 'selected' : ''}" data-media-id="${escapeAttr(item.id)}" title="${escapeAttr(idLabel)}">
@@ -1847,7 +2280,7 @@ async function loadReplyMedia(force = false) {
 
 async function openMediaPicker(mode) {
   const group = findGroup(workspaceSelectedId);
-  const letter = selectedLetterFromGroup(group);
+  const letter = selectedReplyLetterForGroup(group);
   if (!canReplyToLetter(letter)) return;
   workspaceMediaMode = mode === 'video' ? 'video' : 'photo';
   workspaceMediaSection = defaultWorkspaceMediaSection(workspaceMediaMode);
@@ -1861,7 +2294,7 @@ async function openMediaPicker(mode) {
 
 async function syncWorkspaceGallery(mode = workspaceMediaMode, options = {}) {
   const group = findGroup(workspaceSelectedId);
-  const letter = selectedLetterFromGroup(group) || group?.letters?.find(canReplyToLetter) || null;
+  const letter = selectedReplyLetterForGroup(group) || group?.letters?.find(canReplyToLetter) || null;
   if (!canReplyToLetter(letter)) {
     alert('Select a green letter first');
     return;
@@ -1992,6 +2425,15 @@ function letterStripScrollKey(id = workspaceSelectedId, filter = workspaceLetter
   return `${workspaceSessionPrefix}_letter_scroll_${String(id || '')}_${String(filter || 'all')}`;
 }
 
+function currentHistorySideList() {
+  return dialog.querySelector('.workspace-history-side-list');
+}
+
+function historySideScrollKey(group = findGroup(workspaceSelectedId)) {
+  const id = String(group?.key || group?.id || workspaceSelectedId || '');
+  return `${workspaceSessionPrefix}_history_scroll_${id}_${workspaceHistoryFilter}_${workspaceHistoryPage}`;
+}
+
 function menListScrollKey(filter = workspaceListFilter) {
   return `${workspaceSessionPrefix}_men_scroll_${String(filter || 'inbox')}`;
 }
@@ -2003,6 +2445,29 @@ function saveLetterStripScroll() {
     workspaceLetterStripScroll.set(key, strip.scrollTop);
     sessionStorage.setItem(key, String(strip.scrollTop));
   }
+}
+
+function saveHistorySideScroll(group = findGroup(workspaceSelectedId)) {
+  const list = currentHistorySideList();
+  if (!list || !group) return;
+  const key = historySideScrollKey(group);
+  workspaceHistorySideScroll.set(key, list.scrollTop);
+  sessionStorage.setItem(key, String(list.scrollTop || 0));
+}
+
+function restoreHistorySideScroll(group) {
+  const list = currentHistorySideList();
+  if (!list || !group) return;
+  const key = historySideScrollKey(group);
+  const scrollTop = workspaceHistorySideScroll.get(key) ?? Number(sessionStorage.getItem(key) || 0);
+  const restore = () => {
+    const nextList = currentHistorySideList();
+    if (nextList) nextList.scrollTop = scrollTop;
+  };
+  requestAnimationFrame(() => {
+    restore();
+    requestAnimationFrame(restore);
+  });
 }
 
 function restoreLetterStripScroll(group) {
@@ -2252,11 +2717,254 @@ function renderConversation(letter, fallbackName, fallbackPhotoUrl = '') {
   }).join('');
 }
 
+function renderHistoryEntry(entry, group) {
+  if (!entry) {
+    return `
+      <div class="workspace-choose-letter">
+        <span class="workspace-empty-icon" aria-hidden="true">&#9993;</span>
+        <h1>Select the letter</h1>
+        <p>IN THE RIGHT PANEL</p>
+      </div>
+    `;
+  }
+  if (entry.liveLetter) {
+    return renderConversation({
+      ...entry.liveLetter,
+      key: entry.key,
+      direction: entry.direction,
+      dateText: entry.liveLetter.dateText || entry.dateText,
+      bodyText: entry.liveLetter.bodyText || entry.text,
+      conversation: entry.liveLetter.conversation?.length ? entry.liveLetter.conversation : [{
+        direction: entry.direction === 'outgoing' ? 'outgoing' : 'incoming',
+        author: entry.author || group?.name || 'Message',
+        dateText: entry.dateText || '',
+        text: entry.text || ''
+      }]
+    }, group?.name || '', group?.photoUrl || '');
+  }
+  const myName = myProfileName();
+  const author = entry.author || group?.name || 'Message';
+  const isOutgoing = author && myName && author.toLowerCase() === myName.toLowerCase();
+  const direction = entry.direction === 'outgoing' || isOutgoing ? 'outgoing' : 'incoming';
+  const dateText = formatWorkspaceMessageDate(entry.dateText) || entry.dateText || '';
+  const translateKey = translationKey(entry.key || '', 0);
+  const translationLoading = workspaceTranslationLoading.has(translateKey);
+  const translationText = workspaceTranslationResults.get(translateKey) || '';
+  return `
+    <div class="workspace-message-group ${direction}">
+      <div class="workspace-message-line">
+        <article class="workspace-chat-message ${direction} workspace-history-open-message">
+          <div class="workspace-message-top">
+            <div class="workspace-message-author">${escapeHtml(author)}</div>
+            ${dateText ? `<strong>${escapeHtml(dateText)}</strong>` : ''}
+            ${entry.readByMan ? `<span class="workspace-history-read-badge" title="${escapeAttr(entry.readAtText ? `Read ${entry.readAtText}` : 'Read')}">read</span>` : ''}
+            <button class="workspace-translate-message ${translationLoading ? 'loading' : ''}" type="button" data-message-index="0" title="Translate" aria-label="Translate message" ${translationLoading ? 'disabled aria-busy="true"' : ''}>TR</button>
+          </div>
+          <p>${escapeHtml(entry.text || '')}</p>
+          ${translationLoading ? '<div class="workspace-translation-result loading">Translating...</div>' : ''}
+          ${translationText ? `<div class="workspace-translation-result">${escapeHtml(translationText)}</div>` : ''}
+          ${entry.liveLoading ? '<div class="workspace-translation-result loading">Loading Dream letter...</div>' : ''}
+          ${entry.liveError ? `<div class="workspace-translation-result">${escapeHtml(entry.liveError)}</div>` : ''}
+        </article>
+      </div>
+    </div>
+  `;
+}
+
+function updateWorkspaceHistoryEntry(group, historyKey, patch = {}) {
+  const cacheKey = workspaceHistoryCacheKey(group);
+  const cache = readWorkspaceHistoryCache(group);
+  if (!cache?.entries?.length || !historyKey) return null;
+  let updated = null;
+  cache.entries = cache.entries.map(item => {
+    if (String(item.key || '') !== String(historyKey)) return item;
+    updated = { ...item, ...patch };
+    return updated;
+  });
+  saveWorkspaceHistoryCache(group, cache);
+  return updated;
+}
+
+async function loadWorkspaceHistoryLetterDetails(entry, group) {
+  const historyKey = String(entry?.key || '');
+  const messageLink = String(entry?.historyUrl || '').trim();
+  if (!historyKey || !messageLink || entry?.liveLetter || entry?.liveLoading) return null;
+  updateWorkspaceHistoryEntry(group, historyKey, { liveLoading: true, liveError: '' });
+  renderDialog(group);
+  try {
+    const response = await apiFetch('/api/workspace/read-letter', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        sourceProfileId: activeProfileId,
+        messageLink,
+        id: group?.id || '',
+        name: group?.name || '',
+        direction: entry.direction === 'outgoing' ? 'outgoing' : 'incoming'
+      })
+    }, 70000);
+    const liveLetter = {
+      ...(response.letter || {}),
+      messageLink,
+      direction: entry.direction === 'outgoing' ? 'outgoing' : 'incoming'
+    };
+    updateWorkspaceHistoryEntry(group, historyKey, {
+      liveLetter,
+      liveLoading: false,
+      liveError: ''
+    });
+    return liveLetter;
+  } catch (error) {
+    updateWorkspaceHistoryEntry(group, historyKey, {
+      liveLoading: false,
+      liveError: error.message || 'Could not load Dream letter'
+    });
+    return null;
+  } finally {
+    renderDialog(findGroup(workspaceSelectedId));
+  }
+}
+
+function closeWorkspaceMessageHistory() {
+  if (!historyModal) return;
+  historyModal.classList.add('hidden');
+  historyModal.setAttribute('aria-hidden', 'true');
+}
+
+function renderWorkspaceMessageHistory(entries = [], meta = {}) {
+  if (!historyBody) return;
+  const cleanEntries = (Array.isArray(entries) ? entries : [])
+    .map(item => ({
+      author: String(item?.author || '').trim(),
+      dateText: String(item?.dateText || '').trim(),
+      text: String(item?.text || '').trim(),
+      readByMan: item?.readByMan === true,
+      readAtText: String(item?.readAtText || '').trim()
+    }))
+    .filter(item => item.text);
+  const readByManCount = cleanEntries.filter(item => item.readByMan).length;
+  if (historyMeta) {
+    historyMeta.textContent = cleanEntries.length
+      ? `${cleanEntries.length} messages loaded live${readByManCount ? ` · ${readByManCount} read by man` : ''}`
+      : 'Live Dream Singles history';
+  }
+  if (!cleanEntries.length) {
+    historyBody.innerHTML = `
+      <div class="workspace-history-empty">
+        <strong>No message history found</strong>
+        <span>Dream did not return the popup content for this letter.</span>
+      </div>
+    `;
+    return;
+  }
+  historyBody.innerHTML = cleanEntries.map(item => `
+    <article class="workspace-history-message ${item.readByMan ? 'read-by-man' : ''}">
+      <div class="workspace-history-message-head">
+        <strong>${escapeHtml(item.author || meta.fallbackName || 'Message')}</strong>
+        ${item.dateText ? `<span>${escapeHtml(formatWorkspaceMessageDate(item.dateText) || item.dateText)}</span>` : ''}
+        ${item.readByMan ? `<span class="workspace-history-read-badge" title="${escapeAttr(item.readAtText ? `Read ${item.readAtText}` : 'Read by man')}">Read by man</span>` : ''}
+      </div>
+      <p>${escapeHtml(item.text)}</p>
+    </article>
+  `).join('');
+}
+
+async function fetchWorkspaceMessageHistory(group, letter) {
+  if (!letter?.messageLink) throw new Error('Select a letter first');
+  return apiFetch('/api/workspace/message-history', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      sourceProfileId: activeProfileId,
+      messageLink: letter.messageLink,
+      id: letter.id || group?.id || '',
+      name: letter.name || group?.name || ''
+    })
+  }, 120000);
+}
+
+async function loadWorkspaceHistoryIntoPanel(group, options = {}) {
+  let targetGroup = group || findGroup(workspaceSelectedId);
+  const key = workspaceHistoryCacheKey(targetGroup);
+  if (!targetGroup || !key) return null;
+  const cachedHistory = readWorkspaceHistoryCache(targetGroup);
+  if (!options.force && cachedHistory) return cachedHistory;
+  if (workspaceHistoryLoadingIds.has(key)) return cachedHistory || null;
+  const selectedLetter = selectedLetterFromGroup(targetGroup);
+  let letter = canUseLetterForHistory(selectedLetter) ? selectedLetter : historyLetterForGroup(targetGroup);
+  if (!letter?.messageLink && options.allowInboxScan !== false && targetGroup?.id) {
+    try {
+      await scanAndSaveInboxTargets([{
+        id: targetGroup.id,
+        name: targetGroup.name || ''
+      }], WORKSPACE_FULL_SYNC_PAGES, {
+        stopAtExisting: true
+      });
+      await reloadWorkspaceInbox();
+      targetGroup = findGroup(key) || findGroup(targetGroup.id) || targetGroup;
+      letter = historyLetterForGroup(targetGroup);
+    } catch (error) {
+      console.warn('Could not scan man inbox before loading history', error);
+    }
+  }
+  if (!letter?.messageLink) {
+    if (!options.silent) alert('Need at least one saved letter from this man first');
+    return null;
+  }
+
+  workspaceHistoryLoadingIds.add(key);
+  const triggerButton = options.button || null;
+  if (triggerButton) {
+    triggerButton.disabled = true;
+    triggerButton.classList.add('loading');
+    triggerButton.setAttribute('aria-busy', 'true');
+  }
+  renderDialog(targetGroup);
+  try {
+    const response = await fetchWorkspaceMessageHistory(targetGroup, letter);
+    const entries = normalizeWorkspaceHistoryEntries(response.entries || [], targetGroup);
+    const cache = {
+      entries,
+      sourceUrl: response.sourceUrl || '',
+      composeUrl: response.composeUrl || '',
+      source: response.source || '',
+      messageLink: letter.messageLink || '',
+      loadedAt: new Date().toISOString()
+    };
+    saveWorkspaceHistoryCache(targetGroup, cache);
+    if (workspaceSelectedHistoryKey && !entries.some(entry => String(entry.key || '') === String(workspaceSelectedHistoryKey))) {
+      workspaceSelectedHistoryKey = '';
+    }
+    return cache;
+  } catch (error) {
+    if (!options.silent) alert(error.message || 'Could not load message history');
+    console.warn('Could not load message history', error);
+    return null;
+  } finally {
+    workspaceHistoryLoadingIds.delete(key);
+    if (triggerButton) {
+      const currentGroup = findGroup(workspaceSelectedId);
+      const currentSelectedLetter = selectedLetterFromGroup(currentGroup);
+      const canUse = Boolean(canUseLetterForHistory(currentSelectedLetter) ? currentSelectedLetter : historyLetterCandidatesForGroup(currentGroup)[0]);
+      triggerButton.disabled = !canUse;
+      triggerButton.classList.remove('loading');
+      triggerButton.removeAttribute('aria-busy');
+    }
+    renderCurrentWorkspaceState();
+  }
+}
+
+async function openWorkspaceMessageHistory(triggerButton = null) {
+  const group = findGroup(workspaceSelectedId);
+  await loadWorkspaceHistoryIntoPanel(group, { force: true, button: triggerButton || historyBtn });
+}
+
 function renderAttachments(attachments = []) {
   const cleanAttachments = (Array.isArray(attachments) ? attachments : [])
     .map(item => ({
       type: String(item?.type || '').toLowerCase(),
-      url: String(item?.localUrl || item?.url || item?.src || '').trim()
+      url: String(item?.localUrl || item?.url || item?.src || '').trim(),
+      label: String(item?.label || '').trim()
     }))
     .filter(item => item.url)
     .slice(0, 12);
@@ -2284,12 +2992,18 @@ function renderAttachments(attachments = []) {
       <div class="workspace-attachment-previews">
         ${typedAttachments.map((item, index) => {
           const isVideo = item.kind === 'video';
-          const label = item.kind === 'video' ? 'Video' : (item.kind === 'photo' ? 'Photo' : 'File');
-          return isVideo
+          const label = item.label || (item.kind === 'video' ? 'Video' : (item.kind === 'photo' ? 'Photo' : 'File'));
+          const directVideo = isVideo && /\.(?:mp4|webm|mov|m4v)(?:[?#]|$)/i.test(item.url);
+          return directVideo
             ? `<figure class="workspace-attachment-preview video">
                 <video src="${escapeAttr(item.url)}" controls preload="metadata"></video>
                 <figcaption>${escapeHtml(label)}</figcaption>
               </figure>`
+            : isVideo
+              ? `<figure class="workspace-attachment-preview file">
+                  <a href="${escapeAttr(item.url)}" target="_blank" rel="noopener">Open video</a>
+                  <figcaption>${escapeHtml(label)}</figcaption>
+                </figure>`
             : `<figure class="workspace-attachment-preview image">
                 <img src="${escapeAttr(item.url)}" alt="${escapeAttr(label)}" loading="lazy" decoding="async">
                 <figcaption>${escapeHtml(label)}</figcaption>
@@ -2309,6 +3023,7 @@ function renderDialog(group) {
   const name = group.name || `Man ${group.id}`;
   renderHeaderDialog(group);
   const selectedLetter = selectedLetterFromGroup(group);
+  const selectedHistoryEntry = selectedHistoryEntryForGroup(group);
   const isLoading = workspaceLoadingLetterKeys.has(String(selectedLetter?.key || ''));
   const hasReadableText = Boolean(letterText(selectedLetter));
   const isLoaded = Boolean(hasReadableText || (Array.isArray(selectedLetter?.conversation) && selectedLetter.conversation.length));
@@ -2390,53 +3105,41 @@ function renderDialog(group) {
   const sourceText = selectedLetter?.readError && !hasReadableText
     ? `<div class="workspace-message-loading error">${escapeHtml(selectedLetter.readError)}</div>`
     : '';
-  const chooseLetterText = !selectedLetter
-    ? `
-      <div class="workspace-choose-letter">
-        <span class="workspace-empty-icon" aria-hidden="true">📩</span>
-        <h1>Select the letter</h1>
-        <p>IN THE RIGHT PANEL</p>
-      </div>
-    `
-    : '';
+  const rightPanelContent = renderHistoryLettersPanel(group);
   const emptyLetterText = selectedLetter && !isLoading && !sourceText && !isLoaded && !(Array.isArray(selectedLetter.attachments) && selectedLetter.attachments.length)
     ? '<div class="workspace-message-loading error">Could not load letter text</div>'
     : '';
 
   const isReadMode = workspaceListFilter === 'read';
-  const hideLetterPanel = workspaceListFilter === 'noreply';
+  const hideLetterPanel = false;
   dialog.innerHTML = `
     <div class="workspace-reader ${hideLetterPanel ? 'read-mode' : ''}">
       <section class="workspace-conversation">
         <div class="workspace-message-stack">
-          ${chooseLetterText}
           ${loadingText}
           ${sourceText}
           ${emptyLetterText}
-          ${selectedLetter ? renderConversation(selectedLetter, name, group.photoUrl || '') : ''}
+          ${selectedHistoryEntry
+            ? renderHistoryEntry(selectedHistoryEntry, group)
+            : (selectedLetter ? renderConversation(selectedLetter, name, group.photoUrl || '') : renderHistoryEntry(null, group))}
         </div>
       </section>
-      ${hideLetterPanel ? '' : renderWorkspaceSidePanel(letterCards)}
+      ${hideLetterPanel ? '' : renderWorkspaceSidePanel(rightPanelContent, { title: 'Letters', showTitle: false })}
     </div>
   `;
   if (headerLetters) {
-    if (hideLetterPanel) {
-      headerLetters.classList.add('hidden');
-      headerLetters.innerHTML = '';
-    } else {
-      headerLetters.classList.remove('hidden');
-      headerLetters.innerHTML = `
-        <div class="workspace-letter-tools">
-          <button class="workspace-dialog-man-sync ${isManLettersMode ? 'active' : ''} ${headerSyncState ? 'syncing' : ''}" type="button" title="Update and show all letters from this man" ${headerSyncState ? 'disabled aria-busy="true"' : ''}>Man Letter</button>
-          <button class="workspace-dialog-full-sync ${headerSyncState ? 'syncing' : ''}" type="button" title="Full Dialog" ${headerSyncState ? 'disabled aria-busy="true"' : ''}>Full Dialog</button>
-        </div>
-      `;
-    }
+    headerLetters.classList.remove('hidden');
+    headerLetters.classList.add('history-mode');
+    headerLetters.innerHTML = renderWorkspaceHistoryHeader(group);
   }
   restoreLetterStripScroll(group);
-  const canReply = canReplyToLetter(selectedLetter);
+  restoreHistorySideScroll(group);
+  const replyLetter = selectedReplyLetterForGroup(group);
+  const canReply = canReplyToLetter(replyLetter);
+  const canLoadHistory = Boolean(canUseLetterForHistory(selectedLetter) ? selectedLetter : historyLetterCandidatesForGroup(group)[0]);
   composer?.classList.toggle('hidden', isReadMode);
   reply.disabled = isReadMode || !canReply;
+  if (historyBtn) historyBtn.disabled = isReadMode || !canLoadHistory;
   photoBtn.disabled = isReadMode || !canReply;
   videoBtn.disabled = isReadMode || !canReply;
   if (replyTranslateBtn) replyTranslateBtn.disabled = isReadMode || !canReply || !reply.value.trim();
@@ -2574,10 +3277,13 @@ function selectLetterGroup(id, letterKey = '') {
   saveMenListScroll();
   saveLetterStripScroll();
   workspaceSelectedId = String(id || '');
+  const nextGroup = findGroup(workspaceSelectedId);
   workspaceSelectedLetterKey = letterKey
     ? String(letterKey)
     : (previousSelectedId === workspaceSelectedId ? previousSelectedLetterKey : '');
+  if (letterKey) workspaceSelectedHistoryKey = '';
   if (previousSelectedId !== workspaceSelectedId) workspaceLetterPage = 1;
+  if (previousSelectedId !== workspaceSelectedId) workspaceSelectedHistoryKey = '';
   if (previousSelectedId !== workspaceSelectedId && workspaceLettersFilter !== 'all') {
     workspaceLettersFilter = 'all';
     sessionStorage.setItem('dream_workspace_letters_filter', 'all');
@@ -2588,7 +3294,10 @@ function selectLetterGroup(id, letterKey = '') {
   }
   rememberSelectedDialog();
   renderList();
-  renderDialog(findGroup(workspaceSelectedId));
+  renderDialog(nextGroup);
+  if (workspaceListFilter === 'inbox' && previousSelectedId !== workspaceSelectedId) {
+    loadWorkspaceHistoryIntoPanel(nextGroup, { silent: true });
+  }
   if (workspaceListFilter === 'inbox' && letterKey) loadSelectedLetterBody();
   return previousSelectedId !== workspaceSelectedId || previousSelectedLetterKey !== workspaceSelectedLetterKey;
 }
@@ -2719,16 +3428,21 @@ function autoSyncSelectedManFromList() {
   const syncId = String(group?.id || workspaceSelectedId || '');
   if (syncId) {
     workspaceRowSyncIds.add(syncId);
-    renderList();
+    renderCurrentWorkspaceState();
   }
-  Promise.resolve(syncCurrentManLetters(null, {
-    silent: true,
-    listOnly: true,
-    rows: WORKSPACE_INBOX_SYNC_PAGES
-  })).finally(() => {
-    workspaceRowSyncIds.delete(syncId);
-    renderList();
-  });
+  Promise.resolve(scanAndSaveInboxTargets([{
+    id: group?.id || workspaceSelectedId,
+    name: group?.name || ''
+  }], WORKSPACE_FULL_SYNC_PAGES, {
+    stopAtExisting: true
+  }))
+    .then(() => reloadWorkspaceInbox())
+    .catch(error => console.warn('Could not archive man inbox letters', error))
+    .finally(() => {
+      workspaceRowSyncIds.delete(syncId);
+      renderCurrentWorkspaceState();
+      renderList();
+    });
 }
 
 async function apiFetch(url, options = {}) {
@@ -2829,6 +3543,7 @@ async function loadWorkspace() {
     startWorkspaceInboxBackgroundScan();
     const group = findGroup(workspaceSelectedId);
     if (group) {
+      restoreWorkspaceSelectedHistory(group);
       renderDialog(findGroup(workspaceSelectedId));
       if (workspaceSelectedLetterKey) loadSelectedLetterBody();
     } else {
@@ -2856,6 +3571,7 @@ function renderCurrentWorkspaceState() {
   renderList();
   const group = findGroup(workspaceSelectedId);
   if (group) {
+    restoreWorkspaceSelectedHistory(group);
     renderDialog(group);
     if (workspaceSelectedLetterKey) loadSelectedLetterBody();
   } else {
@@ -2898,7 +3614,7 @@ async function scanAndSaveInbox(rows = workspaceSyncRows(), options = {}) {
   const syncRows = full
     ? WORKSPACE_FULL_SYNC_PAGES
     : Math.min(WORKSPACE_FULL_SYNC_PAGES, Math.max(1, Number(rows) || WORKSPACE_SYNC_ROWS_DEFAULT));
-  setWorkspaceActionStatus(`Scanning inbox: ${syncRows} page${syncRows === 1 ? '' : 's'}`);
+  setWorkspaceActionStatus(`Opening Dream inbox and scanning ${syncRows} page${syncRows === 1 ? '' : 's'}`);
   const response = await apiFetch('/api/workspace/scan-inbox', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -2908,7 +3624,10 @@ async function scanAndSaveInbox(rows = workspaceSyncRows(), options = {}) {
     })
   });
   workspaceLetters = response.letters || workspaceLetters;
-  setWorkspaceActionStatus(`Inbox updated: ${response.imported || 0} letters saved`);
+  const favoriteText = response.favorites
+    ? ` Favorites checked: ${response.favorites.favorites || 0}.`
+    : '';
+  setWorkspaceActionStatus(`Men list saved from inbox: ${response.imported || 0} rows.${favoriteText}`);
   return { letters: workspaceLetters, scannedLetters: response.letters || [] };
 }
 
@@ -2979,6 +3698,7 @@ async function scanAndSaveInboxTargets(targets, maxPages = WORKSPACE_FULL_SYNC_P
       page: exactPage || undefined,
       targets,
       stopAtShortPage: options.stopAtShortPage === true,
+      stopAtExisting: options.stopAtExisting === true,
       replaceEmpty: options.replaceEmpty === true,
       persist: options.persist === false ? false : true
     })
@@ -3105,8 +3825,11 @@ async function syncAllWorkspace(button = refreshBtn) {
   if (rowsUpdateBtn && rowsUpdateBtn !== button) rowsUpdateBtn.disabled = true;
   if (syncRowsInput) syncRowsInput.disabled = true;
   try {
-    await scanAndSaveInbox(WORKSPACE_FULL_SYNC_PAGES, { full: true });
+    setWorkspaceActionStatus('Step 1/4: opening Dream inbox');
+    await scanAndSaveInbox(WORKSPACE_INBOX_SYNC_PAGES, { mergeOnly: true, limitLetters: false });
+    setWorkspaceActionStatus('Step 3/4: loading saved men list');
     await reloadWorkspaceInbox();
+    setWorkspaceActionStatus('Step 4/4: refreshing AgencyOS list');
     if (hasPendingIncomingLetters()) playInboxNewMessageSound();
     renderCurrentWorkspaceState();
   } catch (error) {
@@ -3279,18 +4002,25 @@ async function checkCurrentManActivity(button) {
     button.textContent = 'Checking...';
   }
   try {
-    const result = await extensionCommand('CHECK_MAN_PRESENCE', {
-      profileId: activeProfileId,
-      id: group.id,
-      profileUrl: group.profileLink || `https://www.dream-singles.com/${group.id}.html`
-    }, 90000);
+    const result = await apiFetch('/api/workspace/check-activity', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        sourceProfileId: activeProfileId,
+        id: group.id,
+        name: group.name || '',
+        profileUrl: group.profileLink || `https://www.dream-singles.com/${group.id}.html`
+      })
+    });
     const presence = result.presence || {};
+    const onlineNow = presence.onlineNow === true;
+    const lastActivityText = onlineNow ? 'Online now' : String(presence.lastActivityText || '').trim();
     workspaceLetters = workspaceLetters.map(letter => String(letter?.id || '') === String(group.id)
       ? {
           ...letter,
-          onlineNow: presence.onlineNow === true,
-          lastActivityText: presence.onlineNow === true ? 'Online now' : String(presence.lastActivityText || '').trim(),
-          onlineCheckedAt: new Date().toISOString()
+          onlineNow,
+          lastActivityText,
+          onlineCheckedAt: presence.onlineCheckedAt || new Date().toISOString()
         }
       : letter);
     await reloadWorkspaceInbox();
@@ -3363,7 +4093,7 @@ async function syncCurrentManLetters(button, options = {}) {
 
 async function sendWorkspaceReply() {
   const group = findGroup(workspaceSelectedId);
-  const letter = selectedLetterFromGroup(group);
+  const letter = selectedReplyLetterForGroup(group);
   if (!canReplyToLetter(letter)) return;
 
   const text = reply.value.trim();
@@ -3388,15 +4118,17 @@ async function sendWorkspaceReply() {
       })
     }, 300000);
     try {
-      const answeredSaved = await apiFetch('/api/workspace/answered', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ keys: [letter.key], ids: [letter.id] })
-      });
-      if (Array.isArray(answeredSaved.letters)) workspaceLetters = answeredSaved.letters;
-      else updateLetterInMemory({ key: letter.key, unanswered: false });
+      if (!letter.transientHistoryReply) {
+        const answeredSaved = await apiFetch('/api/workspace/answered', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ keys: [letter.key], ids: [letter.id] })
+        });
+        if (Array.isArray(answeredSaved.letters)) workspaceLetters = answeredSaved.letters;
+        else updateLetterInMemory({ key: letter.key, unanswered: false });
+      }
     } catch {
-      updateLetterInMemory({ key: letter.key, unanswered: false });
+      if (!letter.transientHistoryReply) updateLetterInMemory({ key: letter.key, unanswered: false });
     }
     await new Promise(resolve => setTimeout(resolve, 350));
     reply.value = '';
@@ -3441,7 +4173,11 @@ menList.addEventListener('click', event => {
   }
   const button = event.target.closest('.workspace-man');
   if (button) {
+    const wasSelected = String(button.dataset.id || '') === String(workspaceSelectedId || '');
     selectLetterGroup(button.dataset.id, button.dataset.letterKey || '');
+    if (wasSelected && !button.dataset.letterKey) {
+      loadWorkspaceHistoryIntoPanel(findGroup(workspaceSelectedId), { force: true, silent: true });
+    }
     autoSyncSelectedManFromList();
   }
 });
@@ -3473,7 +4209,11 @@ menList.addEventListener('keydown', event => {
   const item = event.target.closest('.workspace-man');
   if (!item) return;
   event.preventDefault();
+  const wasSelected = String(item.dataset.id || '') === String(workspaceSelectedId || '');
   selectLetterGroup(item.dataset.id, item.dataset.letterKey || '');
+  if (wasSelected && !item.dataset.letterKey) {
+    loadWorkspaceHistoryIntoPanel(findGroup(workspaceSelectedId), { force: true, silent: true });
+  }
   autoSyncSelectedManFromList();
 });
 
@@ -3511,6 +4251,11 @@ document.addEventListener('click', event => {
     scanCurrentManAllLetterPages(manSyncButton);
     return;
   }
+  const historyButton = event.target.closest('.workspace-dialog-history');
+  if (historyButton) {
+    openWorkspaceMessageHistory(historyButton);
+    return;
+  }
   const activityButton = event.target.closest('.workspace-check-activity');
   if (activityButton) {
     checkCurrentManActivity(activityButton);
@@ -3532,6 +4277,23 @@ document.addEventListener('click', event => {
 });
 
 dialog.addEventListener('click', event => {
+  const historyPageButton = event.target.closest('[data-history-page]');
+  if (historyPageButton && workspaceSelectedId) {
+    event.preventDefault();
+    event.stopPropagation();
+    saveHistorySideScroll(findGroup(workspaceSelectedId));
+    workspaceHistoryPage = Math.max(1, Number(historyPageButton.dataset.historyPage) || 1);
+    sessionStorage.setItem('dream_workspace_history_page', String(workspaceHistoryPage));
+    renderDialog(findGroup(workspaceSelectedId));
+    return;
+  }
+  const historyFilterButton = event.target.closest('[data-history-filter]');
+  if (historyFilterButton && workspaceSelectedId) {
+    event.preventDefault();
+    event.stopPropagation();
+    setWorkspaceHistoryFilter(historyFilterButton.dataset.historyFilter, findGroup(workspaceSelectedId));
+    return;
+  }
   const pageButton = event.target.closest('[data-letter-page]');
   if (pageButton) {
     const nextPage = Math.max(1, Number(pageButton.dataset.letterPage) || 1);
@@ -3551,15 +4313,39 @@ dialog.addEventListener('click', event => {
     setWorkspaceLettersFilter(filterButton.dataset.letterFilter);
     return;
   }
+  const historyCard = event.target.closest('[data-history-key]');
+  if (historyCard && workspaceSelectedId) {
+    const group = findGroup(workspaceSelectedId);
+    saveHistorySideScroll(group);
+    workspaceSelectedHistoryKey = historyCard.dataset.historyKey || '';
+    workspaceSelectedLetterKey = '';
+    rememberSelectedDialog();
+    renderDialog(group);
+    const entry = selectedHistoryEntryForGroup(group);
+    if (entry?.historyUrl) loadWorkspaceHistoryLetterDetails(entry, group);
+    return;
+  }
   const button = event.target.closest('.workspace-letter-card');
-  if (button && workspaceSelectedId) {
+  if (button && workspaceSelectedId && button.dataset.letterKey) {
     selectLetterGroup(workspaceSelectedId, button.dataset.letterKey);
   }
+});
+
+dialog.addEventListener('dblclick', event => {
+  const historyCard = event.target.closest('[data-history-url]');
+  const url = String(historyCard?.dataset?.historyUrl || '').trim();
+  if (!url) return;
+  event.preventDefault();
+  event.stopPropagation();
+  openWorkspaceDreamUrl(url).catch(error => alert(error.message || 'Could not open Dream history item'));
 });
 
 let workspaceTooltip;
 let workspaceTooltipTimer = null;
 let workspaceTooltipTarget = null;
+let workspaceHistoryMediaPreview;
+let workspaceHistoryMediaPreviewTarget = null;
+let workspaceHistoryMediaLoading = null;
 
 function ensureWorkspaceTooltip() {
   if (workspaceTooltip) return workspaceTooltip;
@@ -3576,6 +4362,103 @@ function hideWorkspaceTooltip() {
   }
   workspaceTooltipTarget = null;
   if (workspaceTooltip) workspaceTooltip.classList.remove('visible');
+}
+
+function ensureWorkspaceHistoryMediaPreview() {
+  if (workspaceHistoryMediaPreview) return workspaceHistoryMediaPreview;
+  workspaceHistoryMediaPreview = document.createElement('div');
+  workspaceHistoryMediaPreview.className = 'workspace-history-media-preview';
+  document.body.appendChild(workspaceHistoryMediaPreview);
+  return workspaceHistoryMediaPreview;
+}
+
+function hideWorkspaceHistoryMediaPreview() {
+  workspaceHistoryMediaPreviewTarget = null;
+  if (workspaceHistoryMediaPreview) {
+    workspaceHistoryMediaPreview.classList.remove('visible');
+    workspaceHistoryMediaPreview.innerHTML = '';
+  }
+}
+
+async function ensureWorkspaceHistoryMediaCache() {
+  if (workspaceMediaCache.length) return workspaceMediaCache;
+  if (!workspaceHistoryMediaLoading) {
+    workspaceHistoryMediaLoading = apiFetch('/api/workspace/media-gallery')
+      .then(response => {
+        workspaceMediaCache = response.media || [];
+        return workspaceMediaCache;
+      })
+      .catch(error => {
+        console.warn('Could not load media gallery for history preview', error);
+        return [];
+      })
+      .finally(() => {
+        workspaceHistoryMediaLoading = null;
+      });
+  }
+  return workspaceHistoryMediaLoading;
+}
+
+function findWorkspaceHistoryMedia(kind = '', id = '', hash = '') {
+  const cleanKind = String(kind || '').toLowerCase() === 'video' ? 'video' : 'photo';
+  const cleanId = String(id || '').replace(/^(?:photo|video):/i, '').trim();
+  const cleanHash = String(hash || '').trim();
+  return workspaceMediaCache.find(item => {
+    const itemKind = String(item?.kind || item?.mediaType || '').toLowerCase() === 'video' ? 'video' : 'photo';
+    if (itemKind !== cleanKind) return false;
+    const itemId = String(item?.galleryId || item?.videoGalleryId || item?.id || '').replace(/^(?:photo|video):/i, '').trim();
+    if (cleanId && itemId === cleanId) return true;
+    if (!cleanHash) return false;
+    return JSON.stringify(item).includes(cleanHash);
+  }) || null;
+}
+
+function positionWorkspaceHistoryMediaPreview(target) {
+  const preview = ensureWorkspaceHistoryMediaPreview();
+  const rect = target.getBoundingClientRect();
+  const previewRect = preview.getBoundingClientRect();
+  const gap = 10;
+  let left = rect.left - previewRect.width - gap;
+  if (left < 10) left = rect.right + gap;
+  if (left + previewRect.width > window.innerWidth - 10) left = window.innerWidth - previewRect.width - 10;
+  let top = rect.top + (rect.height - previewRect.height) / 2;
+  top = Math.max(10, Math.min(top, window.innerHeight - previewRect.height - 10));
+  preview.style.left = `${Math.round(left)}px`;
+  preview.style.top = `${Math.round(top)}px`;
+}
+
+async function showWorkspaceHistoryMediaPreview(target) {
+  if (!target) return;
+  workspaceHistoryMediaPreviewTarget = target;
+  const preview = ensureWorkspaceHistoryMediaPreview();
+  const kind = target.dataset.historyMediaKind || 'photo';
+  const id = target.dataset.historyMediaId || '';
+  const hash = target.dataset.historyMediaHash || '';
+  preview.innerHTML = `<div class="workspace-history-media-preview-state">loading ${escapeHtml(kind)}...</div>`;
+  preview.classList.add('visible');
+  positionWorkspaceHistoryMediaPreview(target);
+  await ensureWorkspaceHistoryMediaCache();
+  if (workspaceHistoryMediaPreviewTarget !== target || !target.isConnected) return;
+  const media = findWorkspaceHistoryMedia(kind, id, hash);
+  if (!media) {
+    preview.innerHTML = `
+      <div class="workspace-history-media-preview-state">
+        <strong>${escapeHtml(kind)}</strong>
+        <span>not in saved gallery</span>
+      </div>
+    `;
+    positionWorkspaceHistoryMediaPreview(target);
+    return;
+  }
+  const src = String(media.kind === 'video' || kind === 'video'
+    ? (media.thumbUrl || media.originalThumbUrl || media.url || '')
+    : (media.thumbUrl || media.url || media.originalThumbUrl || '')
+  ).trim();
+  const label = media.label || `${kind}${id ? ` #${id}` : ''}`;
+  preview.innerHTML = src
+    ? `<div class="workspace-history-media-preview-frame"><img src="${escapeAttr(src)}" alt="${escapeAttr(label)}"></div><div class="workspace-history-media-preview-label">${escapeHtml(label)}</div>`
+    : `<div class="workspace-history-media-preview-state"><strong>${escapeHtml(kind)}</strong><span>saved without preview</span></div>`;
+  positionWorkspaceHistoryMediaPreview(target);
 }
 
 function showWorkspaceTooltip(card) {
@@ -3624,20 +4507,32 @@ dialog.addEventListener('focusin', event => {
   if (card) showWorkspaceTooltip(card);
 });
 
-dialog.addEventListener('focusout', hideWorkspaceTooltip);
+dialog.addEventListener('focusout', () => {
+  hideWorkspaceTooltip();
+  hideWorkspaceHistoryMediaPreview();
+});
 dialog.addEventListener('scroll', event => {
   if (event.target?.classList?.contains('workspace-letter-strip') ||
       event.target?.classList?.contains('workspace-right-letters') ||
       event.target?.classList?.contains('letters-only')) {
     saveLetterStripScroll();
   }
+  if (event.target?.classList?.contains('workspace-history-side-list')) {
+    saveHistorySideScroll(findGroup(workspaceSelectedId));
+  }
   hideWorkspaceTooltip();
+  hideWorkspaceHistoryMediaPreview();
 }, true);
 menList?.addEventListener('scroll', saveMenListScroll, { passive: true });
-window.addEventListener('resize', hideWorkspaceTooltip);
+window.addEventListener('resize', () => {
+  hideWorkspaceTooltip();
+  hideWorkspaceHistoryMediaPreview();
+});
 window.addEventListener('beforeunload', () => {
   saveLetterStripScroll();
+  saveHistorySideScroll(findGroup(workspaceSelectedId));
   saveMenListScroll();
+  persistWorkspaceListPage();
 });
 
 searchInput.addEventListener('input', () => {
@@ -3664,14 +4559,25 @@ searchButton?.addEventListener('click', () => {
 
 refreshBtn.addEventListener('click', syncInbox);
 document.addEventListener('click', event => {
+  const headerHistoryFilter = event.target.closest?.('.workspace-header-letters.history-mode [data-history-filter]');
+  if (headerHistoryFilter && workspaceSelectedId) {
+    event.preventDefault();
+    event.stopPropagation();
+    setWorkspaceHistoryFilter(headerHistoryFilter.dataset.historyFilter, findGroup(workspaceSelectedId));
+    return;
+  }
   const pageButton = event.target.closest?.('#workspaceListPager [data-workspace-page]');
   if (pageButton) {
     event.preventDefault();
     event.stopPropagation();
     if (pageButton.disabled) return;
     workspaceListPage = Number(pageButton.dataset.workspacePage || '1') || 1;
+    persistWorkspaceListPage();
     renderList();
-    if (menList) menList.scrollTop = 0;
+    if (menList) {
+      menList.scrollTop = 0;
+      saveMenListScroll();
+    }
     if (workspaceOnlyOnline && workspaceListFilter === 'inbox') {
       checkWorkspaceOnline().catch(error => console.warn('Could not refresh online page', error));
     }
@@ -3725,8 +4631,11 @@ if (topOnlineBtn) topOnlineBtn.addEventListener('click', () => {
 [inboxFilterBtn, readFilterBtn, noReplyFilterBtn].forEach(button => button?.addEventListener('click', async () => {
   saveMenListScroll();
   saveLetterStripScroll();
-  workspaceListPage = 1;
+  persistWorkspaceListPage();
   workspaceListFilter = ['read', 'noreply'].includes(button.dataset.listFilter) ? button.dataset.listFilter : 'inbox';
+  workspaceListPage = workspaceListFilter === 'inbox'
+    ? Math.max(1, Number(sessionStorage.getItem(`${workspaceSessionPrefix}_list_page_${workspaceListFilter}`) || 1) || 1)
+    : 1;
   persistWorkspaceListFilter();
   renderCurrentWorkspaceState();
 
@@ -3763,6 +4672,11 @@ if (topOnlineBtn) topOnlineBtn.addEventListener('click', () => {
 sentBtn?.addEventListener('click', syncSentLetters);
 photoBtn.addEventListener('click', () => openMediaPicker('photo'));
 videoBtn.addEventListener('click', () => openMediaPicker('video'));
+historyBtn?.addEventListener('click', openWorkspaceMessageHistory);
+historyClose?.addEventListener('click', closeWorkspaceMessageHistory);
+historyModal?.addEventListener('click', event => {
+  if (event.target === historyModal) closeWorkspaceMessageHistory();
+});
 reply.addEventListener('input', resizeReplyBox);
 reply.addEventListener('paste', () => requestAnimationFrame(resizeReplyBox));
 replyTranslateBtn?.addEventListener('click', translateReplyText);
@@ -3819,6 +4733,13 @@ mediaModal.addEventListener('keydown', event => {
   if (event.key === 'Escape' && workspaceMediaPreviewId) {
     event.preventDefault();
     closeMediaPreview();
+  }
+});
+
+document.addEventListener('keydown', event => {
+  if (event.key === 'Escape' && historyModal && !historyModal.classList.contains('hidden')) {
+    event.preventDefault();
+    closeWorkspaceMessageHistory();
   }
 });
 

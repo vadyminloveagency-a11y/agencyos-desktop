@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@800;900&display=swap" rel="stylesheet">
   <link rel="icon" type="image/svg+xml" href="assets/inbox-favicon.svg?v=20260621-mail">
-  <link rel="stylesheet" href="workspace.css?v=20260626-dreamauto-media-20">
+  <link rel="stylesheet" href="workspace.css?v=20260627-inbox-media-frame-3">
 </head>
 <body>
   <div class="workspace-shell">
@@ -136,6 +136,18 @@
       </div>
     </div>
   </div>
+  <div id="workspaceHistoryModal" class="workspace-history-modal hidden" aria-hidden="true">
+    <div class="workspace-history-panel" role="dialog" aria-modal="true" aria-labelledby="workspaceHistoryTitle">
+      <div class="workspace-history-head">
+        <div>
+          <h2 id="workspaceHistoryTitle">Message History</h2>
+          <p id="workspaceHistoryMeta">Live Dream Singles history</p>
+        </div>
+        <button id="workspaceHistoryClose" type="button" aria-label="Close">&times;</button>
+      </div>
+      <div id="workspaceHistoryBody" class="workspace-history-body"></div>
+    </div>
+  </div>
   <div id="workspaceMediaModal" class="workspace-media-modal hidden" aria-hidden="true">
     <div class="workspace-media-panel" role="dialog" aria-modal="true" aria-label="Choose media">
       <div class="workspace-media-head">
@@ -155,6 +167,6 @@
       <div id="workspaceMediaGrid" class="workspace-media-grid"></div>
     </div>
   </div>
-  <script src="workspace.js?v=20260626-dreamauto-media-20"></script>
+  <script src="workspace.js?v=20260627-inbox-media-frame-3"></script>
 </body>
 </html>

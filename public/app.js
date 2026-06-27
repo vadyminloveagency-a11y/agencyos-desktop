@@ -12,8 +12,9 @@ let pendingAgencyProfileChoicePanel = '';
 const profileConnectingIds = new Set();
 const AGENCY_PANEL_KEY = 'agencyos_active_panel';
 const AGENCY_ACCOUNT_TAB_KEY = 'agencyos_account_tab';
+const REMEMBER_ACCESS_KEY = 'agencyos_remember_access';
 const savedAgencyAccountTab = localStorage.getItem(AGENCY_ACCOUNT_TAB_KEY);
-let agencyAccountTab = ['ladies', 'operators', 'salary', 'translator'].includes(savedAgencyAccountTab) ? savedAgencyAccountTab : 'ladies';
+let agencyAccountTab = ['ladies', 'operators', 'salary', 'agency-admin'].includes(savedAgencyAccountTab) ? savedAgencyAccountTab : 'ladies';
 const resolvingProfiles = new Set();
 let onlineRefreshInProgress = false;
 let onlineOnly = false;
@@ -32,6 +33,9 @@ let syncDotsCount = 0;
 let ladyConnected = Boolean(activeProfileId) && localStorage.getItem(`dream_team_lady_connected_${activeProfileId}`) === '1';
 let ladyDisconnectInProgress = false;
 let profileChoiceConnecting = false;
+const AGENCY_DESKTOP_CLIENT = Boolean(window.agencyElectron) || /Electron/i.test(navigator.userAgent || '');
+document.body.classList.toggle('agency-desktop-app', AGENCY_DESKTOP_CLIENT);
+document.body.classList.toggle('agency-web-client', !AGENCY_DESKTOP_CLIENT);
 if (!ladyConnected && !['stats', 'adminPanel', 'settings'].includes(currentView)) {
   currentView = 'workspace';
   localStorage.setItem('dream_crm_view', 'workspace');
@@ -116,6 +120,11 @@ function installAgencyRuntimeStyles() {
   style.id = 'agencyRuntimeStyles';
   style.textContent = `
     body.mandarin-home-active { margin:0!important; min-height:100vh!important; overflow:hidden!important; background:#151311!important; }
+    body.agency-desktop-app.mandarin-home-active .agency-shell-nav-item[data-agency-view="account-manager"],
+    body.agency-desktop-app.mandarin-home-active .agency-account-manager[data-agency-panel="account-manager"] { display:none!important; }
+    body.web-admin-user.mandarin-home-active .agency-shell-nav-item[data-director-hidden="true"],
+    body.web-admin-user.mandarin-home-active #sidebarProfileDock,
+    body.web-admin-user.mandarin-home-active .agency-shell-working-lady { display:none!important; }
     body.mandarin-home-active .app-layout,
     body.mandarin-home-active:not(.agency-profile-choice-modal) .profile-choice-screen,
     body.mandarin-home-active .activation-screen,
@@ -691,6 +700,401 @@ function installAgencyRuntimeStyles() {
     body.mandarin-home-active.agency-dashboard-calendar-open .agency-dashboard-calendar-controls .agency-dashboard-month { height:30px!important; font-size:12px!important; border-radius:7px!important; }
     body.mandarin-home-active.agency-dashboard-calendar-open .agency-dashboard-calendar-head { height:30px!important; margin:0 0 4px!important; padding-left:4px!important; }
     body.mandarin-home-active.agency-dashboard-calendar-open .agency-dashboard-calendar-shell { height:calc(100% - 80px)!important; }
+    body.mandarin-home-active.agency-dashboard-active .agency-dashboard-panel {
+      padding:30px 28px!important;
+      background:#f7f1ed!important;
+      color:#241f1b!important;
+      overflow:hidden!important;
+    }
+    body.mandarin-home-active.app-dark-theme.agency-dashboard-active .agency-dashboard-panel {
+      background:#151311!important;
+      color:#f5eee9!important;
+    }
+    body.mandarin-home-active.agency-dashboard-active .agency-dashboard-toolbar,
+    body.mandarin-home-active.agency-shell-collapsed.agency-dashboard-active .agency-dashboard-toolbar {
+      width:min(1460px,calc(100vw - 320px))!important;
+      height:auto!important;
+      display:grid!important;
+      grid-template-columns:172px 250px minmax(620px,1fr)!important;
+      gap:10px!important;
+      align-items:center!important;
+      margin:0 auto 18px!important;
+    }
+    body.mandarin-home-active.agency-shell-collapsed.agency-dashboard-active .agency-dashboard-toolbar {
+      width:min(1460px,calc(100vw - 180px))!important;
+    }
+    body.mandarin-home-active.agency-dashboard-active .agency-dashboard-actions {
+      grid-column:auto!important;
+      height:46px!important;
+      min-height:46px!important;
+      display:grid!important;
+      grid-template-columns:1fr 1fr!important;
+      gap:8px!important;
+      align-items:center!important;
+      justify-content:stretch!important;
+      padding:0!important;
+      margin:0!important;
+      background:transparent!important;
+      border:0!important;
+    }
+    body.mandarin-home-active.agency-dashboard-active .agency-dashboard-action-btn {
+      width:100%!important;
+      min-width:0!important;
+      height:42px!important;
+      padding:0 14px!important;
+      border:1px solid #eadbd4!important;
+      border-radius:8px!important;
+      background:#fffdfb!important;
+      color:#241f1b!important;
+      font-size:12px!important;
+      font-weight:900!important;
+      line-height:1!important;
+      box-shadow:none!important;
+    }
+    body.mandarin-home-active.agency-dashboard-active .agency-dashboard-action-btn.primary,
+    body.mandarin-home-active.agency-dashboard-active .agency-dashboard-action-btn:hover {
+      border-color:#d1785f!important;
+      background:#d1785f!important;
+      color:#fff!important;
+    }
+    body.mandarin-home-active.app-dark-theme.agency-dashboard-active .agency-dashboard-action-btn {
+      border-color:#3a312a!important;
+      background:#1b1816!important;
+      color:#f5eee9!important;
+    }
+    body.mandarin-home-active.app-dark-theme.agency-dashboard-active .agency-dashboard-action-btn.primary,
+    body.mandarin-home-active.app-dark-theme.agency-dashboard-active .agency-dashboard-action-btn:hover {
+      border-color:#d1785f!important;
+      background:#d1785f!important;
+      color:#fff!important;
+    }
+    body.mandarin-home-active.agency-dashboard-active .agency-dashboard-year,
+    body.mandarin-home-active.agency-dashboard-active .agency-dashboard-months {
+      height:46px!important;
+      background:#fffdfb!important;
+      border:1px solid #eadbd4!important;
+      color:#6f5f57!important;
+    }
+    body.mandarin-home-active.app-dark-theme.agency-dashboard-active .agency-dashboard-year,
+    body.mandarin-home-active.app-dark-theme.agency-dashboard-active .agency-dashboard-months {
+      background:#1b1816!important;
+      border-color:#3a312a!important;
+      color:#d8cec6!important;
+    }
+    body.mandarin-home-active.agency-dashboard-active .agency-dashboard-months {
+      display:grid!important;
+      grid-template-columns:repeat(12,minmax(48px,1fr))!important;
+      gap:5px!important;
+      padding:5px!important;
+    }
+    body.mandarin-home-active.agency-dashboard-active .agency-dashboard-month {
+      height:34px!important;
+      border-radius:8px!important;
+      color:#7d6f68!important;
+      font-size:13px!important;
+      font-weight:900!important;
+    }
+    body.mandarin-home-active.agency-dashboard-active .agency-dashboard-month.active,
+    body.mandarin-home-active.agency-dashboard-active .agency-dashboard-month:hover {
+      background:#f1e5df!important;
+      color:#8b4a38!important;
+      box-shadow:inset 0 0 0 1px #d1785f!important;
+    }
+    body.mandarin-home-active.app-dark-theme.agency-dashboard-active .agency-dashboard-month.active,
+    body.mandarin-home-active.app-dark-theme.agency-dashboard-active .agency-dashboard-month:hover {
+      background:#2b211d!important;
+      color:#f2d1c5!important;
+    }
+    body.mandarin-home-active.agency-dashboard-active .agency-dashboard-status {
+      width:min(1460px,calc(100vw - 320px))!important;
+      min-height:18px!important;
+      height:18px!important;
+      margin:0 auto 4px!important;
+      color:#8f8076!important;
+      overflow:hidden!important;
+    }
+    body.mandarin-home-active.agency-dashboard-active .agency-dashboard-list,
+    body.mandarin-home-active.agency-dashboard-active .agency-dashboard-bonuses,
+    body.mandarin-home-active.agency-shell-collapsed.agency-dashboard-active .agency-dashboard-list,
+    body.mandarin-home-active.agency-shell-collapsed.agency-dashboard-active .agency-dashboard-bonuses {
+      width:min(1460px,calc(100vw - 320px))!important;
+      max-height:calc(100vh - 136px)!important;
+      margin:0 auto!important;
+      border:1px solid #2b2622!important;
+      border-radius:13px!important;
+      background:transparent!important;
+      overflow:auto!important;
+      scrollbar-width:thin!important;
+      scrollbar-color:#d1785f #f4ebe6!important;
+      clip-path:inset(0 round 13px)!important;
+      box-sizing:border-box!important;
+    }
+    body.mandarin-home-active.app-dark-theme.agency-dashboard-active .agency-dashboard-list,
+    body.mandarin-home-active.app-dark-theme.agency-dashboard-active .agency-dashboard-bonuses {
+      scrollbar-color:#d1785f #1b1816!important;
+    }
+    body.mandarin-home-active.agency-dashboard-active .agency-dashboard-list::-webkit-scrollbar,
+    body.mandarin-home-active.agency-dashboard-active .agency-dashboard-bonuses::-webkit-scrollbar {
+      width:7px!important;
+      height:7px!important;
+    }
+    body.mandarin-home-active.agency-dashboard-active .agency-dashboard-list::-webkit-scrollbar-track,
+    body.mandarin-home-active.agency-dashboard-active .agency-dashboard-bonuses::-webkit-scrollbar-track {
+      background:#f4ebe6!important;
+      border-radius:999px!important;
+    }
+    body.mandarin-home-active.app-dark-theme.agency-dashboard-active .agency-dashboard-list::-webkit-scrollbar-track,
+    body.mandarin-home-active.app-dark-theme.agency-dashboard-active .agency-dashboard-bonuses::-webkit-scrollbar-track {
+      background:#1b1816!important;
+    }
+    body.mandarin-home-active.agency-dashboard-active .agency-dashboard-list::-webkit-scrollbar-thumb,
+    body.mandarin-home-active.agency-dashboard-active .agency-dashboard-bonuses::-webkit-scrollbar-thumb {
+      min-height:46px!important;
+      border:2px solid #f4ebe6!important;
+      border-radius:999px!important;
+      background:#d1785f!important;
+    }
+    body.mandarin-home-active.app-dark-theme.agency-dashboard-active .agency-dashboard-list::-webkit-scrollbar-thumb,
+    body.mandarin-home-active.app-dark-theme.agency-dashboard-active .agency-dashboard-bonuses::-webkit-scrollbar-thumb {
+      border-color:#1b1816!important;
+      background:#d1785f!important;
+    }
+    body.mandarin-home-active.agency-shell-collapsed.agency-dashboard-active .agency-dashboard-list,
+    body.mandarin-home-active.agency-shell-collapsed.agency-dashboard-active .agency-dashboard-bonuses {
+      width:min(1460px,calc(100vw - 180px))!important;
+    }
+    body.mandarin-home-active.agency-dashboard-active .agency-dashboard-bonuses.hidden,
+    body.mandarin-home-active.agency-dashboard-active .agency-dashboard-list.hidden,
+    body.mandarin-home-active.agency-dashboard-active .agency-dashboard-calendar.hidden {
+      display:none!important;
+    }
+    body.mandarin-home-active.agency-dashboard-active .agency-dashboard-bonus-filters {
+      position:sticky!important;
+      top:0!important;
+      z-index:6!important;
+      min-height:58px!important;
+      display:grid!important;
+      grid-template-columns:46px 168px 168px 250px 96px minmax(210px,1fr)!important;
+      align-items:center!important;
+      gap:10px!important;
+      padding:8px 12px!important;
+      border-bottom:1px solid #eadbd4!important;
+      background:#fffdfb!important;
+      box-sizing:border-box!important;
+    }
+    body.mandarin-home-active.app-dark-theme.agency-dashboard-active .agency-dashboard-bonus-filters {
+      border-bottom-color:#2d261f!important;
+      background:#171411!important;
+    }
+    body.mandarin-home-active.agency-dashboard-active .agency-dashboard-calendar-chip,
+    body.mandarin-home-active.agency-dashboard-active .agency-dashboard-bonus-apply {
+      height:38px!important;
+      border:1px solid #eadbd4!important;
+      border-radius:8px!important;
+      background:#fffaf7!important;
+      color:#8b4a38!important;
+      font:inherit!important;
+      font-size:12px!important;
+      font-weight:900!important;
+      cursor:pointer!important;
+      box-shadow:none!important;
+    }
+    body.mandarin-home-active.agency-dashboard-active .agency-dashboard-calendar-chip {
+      width:42px!important;
+      display:grid!important;
+      place-items:center!important;
+      padding:0!important;
+    }
+    body.mandarin-home-active.agency-dashboard-active .agency-dashboard-calendar-chip svg {
+      width:19px!important;
+      height:19px!important;
+      fill:none!important;
+      stroke:currentColor!important;
+      stroke-width:1.9!important;
+      stroke-linecap:round!important;
+      stroke-linejoin:round!important;
+    }
+    body.mandarin-home-active.agency-dashboard-active .agency-dashboard-bonus-apply:hover,
+    body.mandarin-home-active.agency-dashboard-active .agency-dashboard-calendar-chip:hover {
+      border-color:#d1785f!important;
+      background:#d1785f!important;
+      color:#fff!important;
+    }
+    body.mandarin-home-active.agency-dashboard-active .agency-dashboard-bonus-total {
+      height:38px!important;
+      min-width:340px!important;
+      justify-self:end!important;
+      display:flex!important;
+      align-items:center!important;
+      justify-content:space-between!important;
+      gap:10px!important;
+      padding:0 12px!important;
+      border:1px solid #eadbd4!important;
+      border-radius:8px!important;
+      background:#fff7f2!important;
+      color:#8f8076!important;
+      box-sizing:border-box!important;
+      font-size:11px!important;
+      font-weight:900!important;
+      text-transform:uppercase!important;
+    }
+    body.mandarin-home-active.agency-dashboard-active .agency-dashboard-bonus-total b {
+      min-width:66px!important;
+      padding:5px 10px!important;
+      border-radius:7px!important;
+      background:#eadbd4!important;
+      color:#984a34!important;
+      font-size:15px!important;
+      line-height:1!important;
+      text-align:center!important;
+      text-transform:none!important;
+    }
+    body.mandarin-home-active.agency-dashboard-active .agency-dashboard-bonus-total b.loading {
+      opacity:.55!important;
+    }
+    body.mandarin-home-active.agency-dashboard-active .agency-dashboard-bonus-loader {
+      width:16px!important;
+      height:16px!important;
+      flex:0 0 16px!important;
+      border:2px solid rgba(152,74,52,.22)!important;
+      border-top-color:#d1785f!important;
+      border-radius:999px!important;
+      animation:agency-dashboard-bonus-spin .75s linear infinite!important;
+    }
+    body.mandarin-home-active.agency-dashboard-active .agency-dashboard-bonus-loader.hidden {
+      display:none!important;
+    }
+    @keyframes agency-dashboard-bonus-spin {
+      to { transform:rotate(360deg); }
+    }
+    body.mandarin-home-active.agency-dashboard-active .agency-dashboard-bonus-filters label {
+      min-width:0!important;
+      display:grid!important;
+      grid-template-columns:42px minmax(0,1fr)!important;
+      align-items:center!important;
+      gap:8px!important;
+      color:#8f8076!important;
+      font-size:11px!important;
+      font-weight:900!important;
+      text-transform:uppercase!important;
+    }
+    body.mandarin-home-active.agency-dashboard-active .agency-dashboard-bonus-filters input,
+    body.mandarin-home-active.agency-dashboard-active .agency-dashboard-bonus-filters select {
+      width:100%!important;
+      height:38px!important;
+      padding:0 10px!important;
+      border:1px solid #eadbd4!important;
+      border-radius:8px!important;
+      background:#fffaf7!important;
+      color:#241f1b!important;
+      font:inherit!important;
+      font-size:12px!important;
+      font-weight:800!important;
+      box-sizing:border-box!important;
+      outline:0!important;
+    }
+    body.mandarin-home-active.agency-dashboard-active .agency-dashboard-bonus-filters select {
+      appearance:auto!important;
+    }
+    body.mandarin-home-active.app-dark-theme.agency-dashboard-active .agency-dashboard-calendar-chip,
+    body.mandarin-home-active.app-dark-theme.agency-dashboard-active .agency-dashboard-bonus-apply,
+    body.mandarin-home-active.app-dark-theme.agency-dashboard-active .agency-dashboard-bonus-filters input,
+    body.mandarin-home-active.app-dark-theme.agency-dashboard-active .agency-dashboard-bonus-filters select {
+      border-color:#3a312a!important;
+      background:#1b1816!important;
+      color:#f5eee9!important;
+    }
+    body.mandarin-home-active.app-dark-theme.agency-dashboard-active .agency-dashboard-bonus-total {
+      border-color:#3a312a!important;
+      background:#1b1816!important;
+      color:#b9aaa0!important;
+    }
+    body.mandarin-home-active.app-dark-theme.agency-dashboard-active .agency-dashboard-bonus-total b {
+      background:#2d261f!important;
+      color:#f1a58c!important;
+    }
+    body.mandarin-home-active.app-dark-theme.agency-dashboard-active .agency-dashboard-bonus-filters label {
+      color:#b9aaa0!important;
+    }
+    body.mandarin-home-active.agency-dashboard-active .agency-dashboard-table td {
+      height:56px!important;
+    }
+    body.mandarin-home-active.agency-dashboard-active .agency-dashboard-table th:nth-child(1),
+    body.mandarin-home-active.agency-dashboard-active .agency-dashboard-table td:nth-child(1) { width:54px!important; }
+    body.mandarin-home-active.agency-dashboard-active .agency-dashboard-table th:nth-child(5),
+    body.mandarin-home-active.agency-dashboard-active .agency-dashboard-table td:nth-child(5) { width:86px!important; }
+    body.mandarin-home-active.agency-dashboard-active .agency-dashboard-table th:nth-child(6),
+    body.mandarin-home-active.agency-dashboard-active .agency-dashboard-table td:nth-child(6),
+    body.mandarin-home-active.agency-dashboard-active .agency-dashboard-table th:nth-child(7),
+    body.mandarin-home-active.agency-dashboard-active .agency-dashboard-table td:nth-child(7),
+    body.mandarin-home-active.agency-dashboard-active .agency-dashboard-table th:nth-child(8),
+    body.mandarin-home-active.agency-dashboard-active .agency-dashboard-table td:nth-child(8),
+    body.mandarin-home-active.agency-dashboard-active .agency-dashboard-table th:nth-child(9),
+    body.mandarin-home-active.agency-dashboard-active .agency-dashboard-table td:nth-child(9) { width:112px!important; }
+    body.mandarin-home-active.agency-dashboard-active .agency-dashboard-gifts-amount {
+      background:#fff3d8!important;
+      color:#9a5a18!important;
+    }
+    body.mandarin-home-active.app-dark-theme.agency-dashboard-active .agency-dashboard-gifts-amount {
+      background:#302516!important;
+      color:#f0bd76!important;
+    }
+    body.mandarin-home-active.agency-dashboard-active .agency-dashboard-gift-row td {
+      background:#fff9ec!important;
+    }
+    body.mandarin-home-active.app-dark-theme.agency-dashboard-active .agency-dashboard-gift-row td {
+      background:#211b13!important;
+    }
+    body.mandarin-home-active.agency-dashboard-active .agency-dashboard-gift-chip {
+      display:inline-grid!important;
+      place-items:center!important;
+      height:18px!important;
+      min-width:42px!important;
+      margin-left:8px!important;
+      padding:0 7px!important;
+      border-radius:999px!important;
+      background:#f4d8a6!important;
+      color:#8b4f13!important;
+      font-size:10px!important;
+      font-weight:900!important;
+      text-transform:uppercase!important;
+      vertical-align:middle!important;
+    }
+    body.mandarin-home-active.agency-dashboard-active .agency-dashboard-total-row td {
+      position:sticky!important;
+      bottom:0!important;
+      z-index:4!important;
+      background:#f4e8e2!important;
+      box-shadow:0 -1px 0 #2b2622!important;
+      font-weight:900!important;
+    }
+    body.mandarin-home-active.app-dark-theme.agency-dashboard-active .agency-dashboard-total-row td {
+      background:#1b1816!important;
+    }
+    body.mandarin-home-active.agency-dashboard-active .agency-dashboard-bonuses-table thead th {
+      position:sticky!important;
+      top:0!important;
+      z-index:5!important;
+      background:#eee2dc!important;
+      box-shadow:0 1px 0 #2b2622!important;
+    }
+    body.mandarin-home-active.app-dark-theme.agency-dashboard-active .agency-dashboard-bonuses-table thead th {
+      background:#171411!important;
+    }
+    body.mandarin-home-active.agency-dashboard-active .agency-dashboard-bonuses-table th:nth-child(1),
+    body.mandarin-home-active.agency-dashboard-active .agency-dashboard-bonuses-table td:nth-child(1) { width:38px!important; padding-left:6px!important; padding-right:6px!important; }
+    body.mandarin-home-active.agency-dashboard-active .agency-dashboard-bonuses-table th:nth-child(2),
+    body.mandarin-home-active.agency-dashboard-active .agency-dashboard-bonuses-table td:nth-child(2) { width:142px!important; }
+    body.mandarin-home-active.agency-dashboard-active .agency-dashboard-bonuses-table th:nth-child(3),
+    body.mandarin-home-active.agency-dashboard-active .agency-dashboard-bonuses-table td:nth-child(3) { width:220px!important; }
+    body.mandarin-home-active.agency-dashboard-active .agency-dashboard-bonuses-table th:nth-child(4),
+    body.mandarin-home-active.agency-dashboard-active .agency-dashboard-bonuses-table td:nth-child(4) { width:220px!important; }
+    body.mandarin-home-active.agency-dashboard-active .agency-dashboard-bonuses-table th:nth-child(5),
+    body.mandarin-home-active.agency-dashboard-active .agency-dashboard-bonuses-table td:nth-child(5) { width:210px!important; }
+    body.mandarin-home-active.agency-dashboard-active .agency-dashboard-bonuses-table th:nth-child(6),
+    body.mandarin-home-active.agency-dashboard-active .agency-dashboard-bonuses-table td:nth-child(6) { width:148px!important; }
+    body.mandarin-home-active.agency-dashboard-active .agency-dashboard-bonuses-table th:nth-child(7),
+    body.mandarin-home-active.agency-dashboard-active .agency-dashboard-bonuses-table td:nth-child(7) { width:96px!important; }
     body.mandarin-home-active .agency-shell-collapse { width:30px!important; height:30px!important; min-width:30px!important; display:grid!important; place-items:center!important; padding:0!important; border:1px solid #3a312a!important; border-radius:8px!important; background:#1b1816!important; color:#f5eee9!important; line-height:1!important; overflow:hidden!important; }
     body.mandarin-home-active.agency-shell-collapsed .agency-shell-collapse { margin:0!important; }
     body.mandarin-home-active .agency-shell-user { position:relative!important; cursor:pointer!important; overflow:visible!important; }
@@ -862,6 +1266,7 @@ function installAgencyRuntimeStyles() {
     body.mandarin-home-active:not(.app-dark-theme) .agency-user-inactive-mark { background:#e2d3cc!important; color:#8b4a38!important; }
   `;
   document.head.appendChild(style);
+  installAgencyDashboardCompactStyles();
 }
 
 function installMainPageZoom() {
@@ -988,6 +1393,7 @@ const agencyFavoritesAuthorizeBtn = document.getElementById('agencyFavoritesAuth
 let agencyProfilePowerToggle = document.getElementById('agencyProfilePowerToggle');
 const AGENCY_FAVORITES_TAB_KEY = 'agencyos_favorites_tab';
 let agencyFavoritesTab = localStorage.getItem(AGENCY_FAVORITES_TAB_KEY) === 'chat' ? 'chat' : 'favorites';
+const AGENCY_DASHBOARD_MODE_KEY = 'agencyos_dashboard_mode';
 let agencyTopOnlineActive = false;
 let agencyTopOnlineTimer = null;
 let agencyChatTopOnlineActive = false;
@@ -1006,6 +1412,8 @@ const usernameInput = document.getElementById('usernameInput');
 const passwordInput = document.getElementById('passwordInput');
 const accessBtn = document.getElementById('accessBtn');
 const accessStatus = document.getElementById('accessStatus');
+const rememberAccessRow = document.getElementById('rememberAccessRow');
+const rememberAccessInput = document.getElementById('rememberAccessInput');
 const mandarinHomeScreen = document.getElementById('mandarinHomeScreen');
 const agencyShellUserName = document.getElementById('agencyShellUserName');
 const agencyShellUserRole = document.getElementById('agencyShellUserRole');
@@ -1021,9 +1429,18 @@ const agencyShellWorkingLadyPhoto = document.getElementById('agencyShellWorkingL
 const agencyShellWorkingLadyInitial = document.getElementById('agencyShellWorkingLadyInitial');
 const agencyShellWorkingLadyName = document.getElementById('agencyShellWorkingLadyName');
 const agencyShellWorkingLadyId = document.getElementById('agencyShellWorkingLadyId');
+const agencyGoogleDriveBtn = document.getElementById('agencyGoogleDriveBtn');
+const agencyDriveModal = document.getElementById('agencyDriveModal');
+const agencyDriveCloseBtn = document.getElementById('agencyDriveCloseBtn');
+const agencyDriveList = document.getElementById('agencyDriveList');
 const agencyBackBtn = document.getElementById('agencyBackBtn');
 const agencyRefreshBtn = document.getElementById('agencyRefreshBtn');
 const agencyAppUpdateBtn = document.getElementById('agencyAppUpdateBtn');
+const agencyClearCacheBtn = document.getElementById('agencyClearCacheBtn');
+const agencySettingsBtn = document.getElementById('agencySettingsBtn');
+const agencySettingsModal = document.getElementById('agencySettingsModal');
+const agencySettingsCloseBtn = document.getElementById('agencySettingsCloseBtn');
+const agencySettingsContent = document.getElementById('agencySettingsContent');
 const agencyZoomOutBtn = document.getElementById('agencyZoomOutBtn');
 const agencyZoomInBtn = document.getElementById('agencyZoomInBtn');
 const agencyAccountSearch = document.getElementById('agencyAccountSearch');
@@ -1034,6 +1451,7 @@ const agencyAccountTableWrap = document.querySelector('.agency-account-table-wra
 const agencyAddProfileBtn = document.getElementById('agencyAddProfileBtn');
 const agencySalarySettingsBtn = document.getElementById('agencySalarySettingsBtn');
 const agencyTranslatorSettingsBtn = document.getElementById('agencyTranslatorSettingsBtn');
+const agencyAdminSettingsBtn = document.getElementById('agencyAdminSettingsBtn');
 const agencySalaryPanel = document.getElementById('agencySalaryPanel');
 const agencySalaryModal = document.getElementById('agencySalaryModal');
 const agencySalaryBackdrop = document.getElementById('agencySalaryBackdrop');
@@ -1053,13 +1471,37 @@ const agencyTranslatorTestBtn = document.getElementById('agencyTranslatorTestBtn
 const agencyTranslatorTestInput = document.getElementById('agencyTranslatorTestInput');
 const agencyTranslatorTestOutput = document.getElementById('agencyTranslatorTestOutput');
 const agencyTranslatorStatus = document.getElementById('agencyTranslatorStatus');
+const agencyAdminPanel = document.getElementById('agencyAdminPanel');
+const agencyAdminUrl = document.getElementById('agencyAdminUrl');
+const agencyAdminLogin = document.getElementById('agencyAdminLogin');
+const agencyAdminPassword = document.getElementById('agencyAdminPassword');
+const agencyAdminSaveBtn = document.getElementById('agencyAdminSaveBtn');
+const agencyAdminTestBtn = document.getElementById('agencyAdminTestBtn');
+const agencyAdminStatus = document.getElementById('agencyAdminStatus');
+let agencyAdminFormEditing = false;
 const agencyDashboardSearch = document.getElementById('agencyDashboardSearch');
 const agencyDashboardCount = document.getElementById('agencyDashboardCount');
 const agencyDashboardYear = document.getElementById('agencyDashboardYear');
 const agencyDashboardMonths = document.getElementById('agencyDashboardMonths');
+const agencyDashboardStartBalanceBtn = document.getElementById('agencyDashboardStartBalanceBtn');
+const agencyDashboardBonusesBtn = document.getElementById('agencyDashboardBonusesBtn');
 const agencyDashboardStatus = document.getElementById('agencyDashboardStatus');
 const agencyDashboardList = document.getElementById('agencyDashboardList');
 const agencyDashboardRows = document.getElementById('agencyDashboardRows');
+const agencyDashboardSummary = document.getElementById('agencyDashboardSummary');
+const agencyDashboardSummaryIncome = document.getElementById('agencyDashboardSummaryIncome');
+const agencyDashboardSummaryGifts = document.getElementById('agencyDashboardSummaryGifts');
+const agencyDashboardSummarySalary = document.getElementById('agencyDashboardSummarySalary');
+const agencyDashboardBonuses = document.getElementById('agencyDashboardBonuses');
+const agencyDashboardBonusesRows = document.getElementById('agencyDashboardBonusesRows');
+const agencyDashboardBonusCalendarBtn = document.getElementById('agencyDashboardBonusCalendarBtn');
+const agencyDashboardBonusFrom = document.getElementById('agencyDashboardBonusFrom');
+const agencyDashboardBonusTo = document.getElementById('agencyDashboardBonusTo');
+const agencyDashboardBonusProfile = document.getElementById('agencyDashboardBonusProfile');
+const agencyDashboardBonusApplyBtn = document.getElementById('agencyDashboardBonusApplyBtn');
+const agencyDashboardBonusTotal = document.getElementById('agencyDashboardBonusTotal');
+const agencyDashboardBonusGifts = document.getElementById('agencyDashboardBonusGifts');
+const agencyDashboardBonusLoader = document.getElementById('agencyDashboardBonusLoader');
 const agencyDashboardCalendar = document.getElementById('agencyDashboardCalendar');
 const agencyDashboardBackBtn = document.getElementById('agencyDashboardBackBtn');
 const agencyDashboardCalendarYear = document.getElementById('agencyDashboardCalendarYear');
@@ -1110,6 +1552,20 @@ function reloadWorkspaceEmbed(reason = 'refresh') {
     url.searchParams.set('v', `20260625-agency-inbox-${reason}-${Date.now()}`);
     frame.src = `${url.pathname.split('/').pop()}?${url.searchParams.toString()}`;
   });
+}
+
+function refreshWorkspaceEmbedInPlace(reason = 'refresh') {
+  let sent = false;
+  [workspaceEmbedFrame, agencyInboxFrame].forEach(frame => {
+    if (!frame?.contentWindow) return;
+    frame.contentWindow.postMessage({
+      source: 'agencyos',
+      type: 'AGENCY_WORKSPACE_REFRESH',
+      reason
+    }, '*');
+    sent = true;
+  });
+  if (!sent) reloadWorkspaceEmbed(reason);
 }
 const cancelAddProfileBtn = document.getElementById('cancelAddProfileBtn');
 const newProfileId = document.getElementById('newProfileId');
@@ -1222,6 +1678,7 @@ function installNoAutofillInput(input) {
 
 installNoAutofillInput(operatorTranslatorApiKey);
 installNoAutofillInput(agencyAccessPassword);
+installNoAutofillInput(agencyAdminPassword);
 installNoAutofillInput(editOperatorAgencyPassword);
 
 function setTranslatorReadTarget(target, lang) {
@@ -1325,8 +1782,15 @@ let salaryCalendarMonth = '';
 let selectedSalaryDate = '';
 let agencyDashboardMonth = Number(dreamDateInputValue().slice(5, 7));
 let agencyDashboardRowsData = [];
+let agencyDashboardBonusesData = [];
+let agencyDashboardBonusesTotal = 0;
+let agencyDashboardBonusesGiftsTotal = 0;
+let agencyDashboardMode = localStorage.getItem(AGENCY_DASHBOARD_MODE_KEY) === 'bonuses' ? 'bonuses' : 'total';
+let agencyDashboardBonusDateInitialized = false;
 let agencyDashboardCalendarData = null;
 let agencyDashboardSelectedDate = '';
+let agencyDashboardBalanceRefreshInFlight = false;
+let agencyDashboardAutoBalanceTimer = null;
 let myStatsRequestSeq = 0;
 
 const profileModal = document.getElementById('profileModal');
@@ -1464,12 +1928,18 @@ function showExtensionStatus(status = {}) {
     ? progressText
     : (scanRunning ? 'Full Scan is running. Click to stop it.' : 'Full Scan: scans all favorite men and loads their letter status.');
   if (!syncDotsTimer) paintSyncButtons('');
-  dailySyncBtn.removeAttribute('title');
-  fullSyncBtn.removeAttribute('title');
   delete dailySyncBtn.dataset.tooltip;
   delete fullSyncBtn.dataset.tooltip;
+  dailySyncBtn.setAttribute('title', updateHint);
+  fullSyncBtn.setAttribute('title', fullHint);
   dailySyncBtn.setAttribute('aria-label', updateHint);
   fullSyncBtn.setAttribute('aria-label', fullHint);
+  agencyFavoritesUpdateTodayBtn?.setAttribute('title', activeSyncMode === 'daily'
+    ? updateHint
+    : 'Update Today: scan 3 inbox pages and refresh recent men');
+  agencyFavoritesScanAllBtn?.setAttribute('title', activeSyncMode === 'full'
+    ? fullHint
+    : 'Scan All: scan inbox pages according to the page limit');
   fullSyncBtn.classList.toggle('scan-stop-mode', scanRunning);
   if (stopSyncBtn) {
     stopSyncBtn.disabled = true;
@@ -1590,6 +2060,11 @@ function ensureSidebarProfileDock() {
 function renderSidebarProfileDock() {
   const dock = ensureSidebarProfileDock();
   if (!dock) return;
+  if (isWebsiteAdminSession()) {
+    dock.innerHTML = '';
+    dock.classList.add('hidden');
+    return;
+  }
   if (!currentUser || !availableProfiles.length) {
     dock.innerHTML = '';
     dock.classList.add('hidden');
@@ -1635,7 +2110,9 @@ function isActiveProfileOnline() {
 function syncAgencyNavLocks() {
   const profileReady = isActiveProfileOnline();
   mandarinHomeScreen?.querySelectorAll('.agency-shell-nav-item[data-agency-view]').forEach(item => {
-    const locked = isProfileWorkView(item.dataset.agencyView) && !profileReady;
+    const hiddenForWebsiteAdmin = isWebsiteAdminSession() && isProfileWorkView(item.dataset.agencyView);
+    const locked = hiddenForWebsiteAdmin || (isProfileWorkView(item.dataset.agencyView) && !profileReady);
+    item.classList.toggle('is-profile-hidden', locked);
     item.classList.toggle('is-profile-locked', locked);
     item.disabled = locked;
     if (locked) {
@@ -1646,6 +2123,10 @@ function syncAgencyNavLocks() {
       item.removeAttribute('title');
     }
   });
+  const currentPanel = normalizeAgencyPanel(localStorage.getItem(AGENCY_PANEL_KEY) || 'home');
+  if (!profileReady && isProfileWorkView(currentPanel)) {
+    activateAgencyPanel('home', { persist: false });
+  }
 }
 
 async function connectProfileById(profileId, options = {}) {
@@ -3447,6 +3928,22 @@ function hasAdminPanelAccess() {
   return ['admin', 'director', 'mentor'].includes(currentUser?.role);
 }
 
+function isAgencyDesktopApp() {
+  return AGENCY_DESKTOP_CLIENT;
+}
+
+function isAgencyWebsite() {
+  return !isAgencyDesktopApp();
+}
+
+function isDesktopAdminSession() {
+  return isAgencyDesktopApp() && currentUser?.role === 'admin';
+}
+
+function isWebsiteAdminSession() {
+  return isAgencyWebsite() && currentUser?.role === 'admin';
+}
+
 function syncRoleNavigation() {
   const adminPanelAllowed = hasAdminPanelAccess();
   const ownerMode = currentUser?.role === 'director';
@@ -3454,6 +3951,8 @@ function syncRoleNavigation() {
   document.body.classList.toggle('operator-user', currentUser?.role === 'operator');
   document.body.classList.toggle('owner-user', ownerMode);
   document.body.classList.toggle('mentor-user', mentorMode);
+  document.body.classList.toggle('desktop-admin-user', isDesktopAdminSession());
+  document.body.classList.toggle('web-admin-user', isWebsiteAdminSession());
   adminPanelNavBtn?.classList.toggle('hidden', !adminPanelAllowed);
   profileChoiceAdminPanel?.classList.toggle('hidden', !adminPanelAllowed);
   myStatsNavBtn?.classList.toggle('hidden', ownerMode || !['admin', 'operator'].includes(currentUser?.role));
@@ -5079,6 +5578,10 @@ async function startSync(mode) {
   try {
     activeSyncMode = mode === 'full' ? 'full' : 'daily';
     showPendingSyncButton(activeSyncMode);
+    const activeButton = activeSyncMode === 'full' ? agencyFavoritesScanAllBtn : agencyFavoritesUpdateTodayBtn;
+    activeButton?.setAttribute('title', activeSyncMode === 'full'
+      ? 'Scan All: waiting for confirmation'
+      : 'Update Today: waiting for confirmation');
 
     if (!await openSyncConfirm(mode)) {
       activeSyncMode = '';
@@ -5087,6 +5590,9 @@ async function startSync(mode) {
       return;
     }
 
+    activeButton?.setAttribute('title', activeSyncMode === 'full'
+      ? 'Scan All: opening Dream inbox and scanning pages'
+      : 'Update Today: opening Dream inbox and scanning 3 pages');
     showExtensionStatus({ phase: 'server-sync', ready: true, message: 'Server is reading Dream Singles inbox...' });
     const result = await serverProfileRequest('server-sync-inbox', {
       body: {
@@ -5095,6 +5601,7 @@ async function startSync(mode) {
           : Math.min(3, Number(pageLimit?.value || 3) || 3)
       }
     });
+    activeButton?.setAttribute('title', 'Loading saved men list into AgencyOS');
     await loadMen(false);
     if (currentView === 'chat') await loadChatFavorites();
     showExtensionStatus({
@@ -6076,6 +6583,92 @@ googleDriveNavBtn?.addEventListener('click', () => {
   }
   window.open(url, '_blank', 'noopener,noreferrer');
 });
+
+function closeAgencyDriveModal() {
+  agencyDriveModal?.classList.add('hidden');
+}
+
+function renderAgencyDriveList() {
+  if (!agencyDriveList) return;
+  const profiles = (availableProfiles || []).slice().sort((a, b) =>
+    String(a.name || a.id || '').localeCompare(String(b.name || b.id || ''))
+  );
+  agencyDriveList.innerHTML = profiles.length
+    ? profiles.map(profile => {
+        const url = String(profile.googleDriveUrl || '').trim();
+        const initial = String(profile.name || profile.id || '?').slice(0, 1).toUpperCase();
+        return `
+          <div class="agency-drive-row">
+            <span class="agency-drive-avatar ${profile.photoUrl ? '' : 'no-photo'}">
+              ${profile.photoUrl ? `<img src="${escapeAttr(profile.photoUrl)}" alt="">` : escapeHtml(initial)}
+            </span>
+            <span class="agency-drive-copy">
+              <strong>${escapeHtml(profile.name || `Profile ${profile.id}`)}</strong>
+              <small>ID ${escapeHtml(profile.id || '')}</small>
+            </span>
+            <button class="agency-drive-open-btn" type="button" data-drive-url="${escapeAttr(url)}" ${url ? '' : 'disabled'}>
+              Open Disk
+            </button>
+          </div>
+        `;
+      }).join('')
+    : '<div class="agency-drive-empty">No profiles assigned.</div>';
+}
+
+function openAgencyDriveModal() {
+  renderAgencyDriveList();
+  agencyDriveModal?.classList.remove('hidden');
+}
+
+agencyGoogleDriveBtn?.addEventListener('click', openAgencyDriveModal);
+agencyDriveCloseBtn?.addEventListener('click', closeAgencyDriveModal);
+agencyDriveModal?.addEventListener('click', event => {
+  if (event.target.classList.contains('add-profile-backdrop')) {
+    closeAgencyDriveModal();
+    return;
+  }
+  const button = event.target.closest?.('.agency-drive-open-btn[data-drive-url]');
+  if (!button) return;
+  const url = String(button.dataset.driveUrl || '').trim();
+  if (!url) return;
+  window.open(url, '_blank', 'noopener,noreferrer');
+});
+agencyDriveModal?.addEventListener('keydown', event => {
+  if (event.key === 'Escape') closeAgencyDriveModal();
+});
+
+function closeAgencySettingsModal() {
+  agencySettingsModal?.classList.add('hidden');
+  agencyTranslatorPanel?.classList.add('hidden');
+}
+
+async function openAgencySettingsModal() {
+  if (agencySettingsContent && agencyTranslatorPanel && agencyTranslatorPanel.parentElement !== agencySettingsContent) {
+    agencySettingsContent.appendChild(agencyTranslatorPanel);
+  }
+  agencySettingsModal?.classList.remove('hidden');
+  agencyTranslatorPanel?.classList.remove('hidden');
+  agencyTranslatorPanel?.classList.add('is-toolbar-settings');
+  await loadAgencyTranslatorSettings();
+}
+
+agencySettingsBtn?.addEventListener('click', openAgencySettingsModal);
+window.openAgencySettingsModal = openAgencySettingsModal;
+document.addEventListener('click', event => {
+  const button = event.target.closest?.('#agencySettingsBtn');
+  if (!button) return;
+  event.preventDefault();
+  event.stopPropagation();
+  openAgencySettingsModal();
+}, true);
+agencySettingsCloseBtn?.addEventListener('click', closeAgencySettingsModal);
+agencySettingsModal?.addEventListener('click', event => {
+  if (event.target.classList.contains('add-profile-backdrop')) closeAgencySettingsModal();
+});
+agencySettingsModal?.addEventListener('keydown', event => {
+  if (event.key === 'Escape') closeAgencySettingsModal();
+});
+
 chatAddManBtn?.addEventListener('click', addChatFavorite);
 chatManIdInput?.addEventListener('keydown', event => {
   if (event.key === 'Enter') addChatFavorite();
@@ -6092,26 +6685,13 @@ async function runAgencyNavigation(action) {
     return;
   }
   if (command === 'refresh') {
-    const panel = normalizeAgencyPanel(localStorage.getItem(AGENCY_PANEL_KEY) || 'home');
-    if (panel === 'inbox') {
-      reloadWorkspaceEmbed('toolbar-refresh');
-      return;
+    if (agencyRefreshBtn) {
+      agencyRefreshBtn.disabled = true;
+      agencyRefreshBtn.classList.add('is-reloading');
     }
-    if (panel === 'favorites') {
-      if (agencyFavoritesTab === 'chat') await loadChatFavorites(false);
-      else await loadMen(false);
-      mountAgencyFavoritesView();
-      return;
-    }
-    if (panel === 'dashboard') {
-      loadAgencyDashboardOperators();
-      return;
-    }
-    if (panel === 'account-manager') {
-      await loadAgencyAccountManager();
-      return;
-    }
-    activateAgencyPanel('home', { persist: false });
+    requestAnimationFrame(() => {
+      setTimeout(() => window.location.reload(), 120);
+    });
     return;
   }
   if (window.agencyElectron?.navigate) {
@@ -6125,6 +6705,37 @@ async function runAgencyNavigation(action) {
 
 agencyBackBtn?.addEventListener('click', () => runAgencyNavigation('back'));
 agencyRefreshBtn?.addEventListener('click', () => runAgencyNavigation('refresh'));
+agencyClearCacheBtn?.addEventListener('click', async () => {
+  if (!activeProfileId) {
+    alert('Select a profile first.');
+    return;
+  }
+  const confirmed = confirm('Clear local letter cache on this computer?\n\nThis will remove saved Workspace letters, media list, and downloaded attachments for the selected profile. Dream messages will not be deleted.');
+  if (!confirmed) return;
+  agencyClearCacheBtn.disabled = true;
+  agencyClearCacheBtn.classList.add('is-clearing');
+  try {
+    const result = await apiFetch('/api/workspace/clear-cache', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sourceProfileId: activeProfileId })
+    });
+    const bytes = Number(result?.cleared?.attachmentBytes || 0);
+    const mb = bytes ? Math.round((bytes / 1024 / 1024) * 10) / 10 : 0;
+    alert(`Cache cleared.\n\nLetters: ${result?.cleared?.letters || 0}\nMedia items: ${result?.cleared?.media || 0}\nAttachments: ${mb} MB`);
+    [workspaceEmbedFrame, agencyInboxFrame].forEach(frame => {
+      if (!frame) return;
+      const url = new URL(frame.getAttribute('src') || 'workspace.html?embedded=1', window.location.href);
+      url.searchParams.set('v', String(Date.now()));
+      frame.setAttribute('src', `${url.pathname.replace(/^\//, '')}${url.search}`);
+    });
+  } catch (error) {
+    alert(error.message || 'Could not clear cache.');
+  } finally {
+    agencyClearCacheBtn.disabled = false;
+    agencyClearCacheBtn.classList.remove('is-clearing');
+  }
+});
 agencyAppUpdateBtn?.addEventListener('click', async () => {
   if (!window.agencyElectron?.checkForUpdates) {
     alert('Updates are available in the desktop app only.');
@@ -6148,31 +6759,16 @@ agencyAppUpdateBtn?.addEventListener('click', async () => {
       alert(result.message || 'No updates available.');
       return;
     }
-    const shouldInstall = confirm(`${result.message || `Update available: v${result.latestVersion}.`}\n\nCurrent version: v${result.currentVersion}\n\nInstall now?`);
-    if (shouldInstall) {
-      if (!window.agencyElectron?.installUpdate) {
-        alert('This version can only open the download page. Install the latest version once to enable automatic updates.');
-        if (result.downloadUrl) await window.agencyElectron.openExternalUrl(result.downloadUrl);
-        return;
-      }
-      agencyAppUpdateBtn.textContent = 'Downloading...';
-      const installResult = await window.agencyElectron.installUpdate();
-      if (!installResult?.ok) {
-        alert(installResult?.error || 'Could not install update.');
-        return;
-      }
-      if (installResult.hasUpdate === false) {
-        alert(installResult.message || 'No updates available.');
-        return;
-      }
-      agencyAppUpdateBtn.textContent = 'Installing...';
+    const shouldDownload = confirm(`${result.message || `Update available: v${result.latestVersion}.`}\n\nCurrent version: v${result.currentVersion}\n\nDownload now?`);
+    if (shouldDownload && result.downloadUrl) {
+      await window.agencyElectron.openExternalUrl(result.downloadUrl);
     }
   } catch (error) {
     alert(error?.message || 'Could not check for updates.');
   } finally {
     agencyAppUpdateBtn.disabled = false;
     agencyAppUpdateBtn.classList.remove('is-checking');
-    agencyAppUpdateBtn.textContent = oldText || 'Update';
+    agencyAppUpdateBtn.textContent = oldText || 'App Update';
   }
 });
 agencyZoomOutBtn?.addEventListener('click', () => runAgencyNavigation('zoom-out'));
@@ -6228,16 +6824,23 @@ showExtensionStatus(ladyConnected
 let setupMode = false;
 
 function normalizeAgencyPanel(view) {
-  return ['home', 'account-manager', 'dashboard', 'inbox', 'favorites', 'letterbot', 'sender'].includes(view) ? view : 'account-manager';
+  const panel = ['home', 'account-manager', 'dashboard', 'inbox', 'favorites', 'letterbot', 'sender'].includes(view) ? view : 'account-manager';
+  if (isAgencyDesktopApp() && panel === 'account-manager') {
+    return 'dashboard';
+  }
+  if ((currentUser?.role === 'director' || isWebsiteAdminSession()) && ['inbox', 'favorites', 'letterbot', 'sender'].includes(panel)) {
+    return 'dashboard';
+  }
+  return panel;
 }
 
 function syncAgencyAccountTabs() {
   mandarinHomeScreen?.querySelectorAll('.agency-account-tab').forEach(item => {
     const tab = item.dataset.agencyAccountTab || 'ladies';
     const visible = tab === 'ladies' ||
-      (tab === 'operators' && currentUser?.role !== 'operator') ||
-      (tab === 'translator' && ['admin', 'operator'].includes(currentUser?.role)) ||
-      (tab === 'salary' && currentUser?.role === 'director');
+      (tab === 'operators' && currentUser?.role !== 'operator' && !isDesktopAdminSession()) ||
+      (tab === 'salary' && currentUser?.role === 'director') ||
+      (tab === 'agency-admin' && currentUser?.role === 'director');
     item.classList.toggle('hidden', !visible);
     const active = item.dataset.agencyAccountTab === agencyAccountTab;
     item.classList.toggle('active', active);
@@ -6416,6 +7019,14 @@ function mountAgencyFavoritesView() {
 function activateAgencyPanel(view, options = {}) {
   const panelView = normalizeAgencyPanel(view);
   const persist = options.persist !== false;
+  document.body.classList.add('auth-ready', 'mandarin-home-active');
+  mandarinHomeScreen?.classList.remove('hidden');
+  mandarinHomeScreen?.setAttribute('aria-hidden', 'false');
+  document.querySelector('.app-layout')?.classList.add('hidden');
+  if (workspaceView) {
+    workspaceView.classList.add('hidden');
+    workspaceView.style.display = 'none';
+  }
   syncAgencyProfilePowerToggle();
   ['account-manager', 'dashboard', 'inbox', 'favorites', 'letterbot', 'sender'].forEach(name => {
     document.body.classList.toggle('agency-panel-' + name, panelView === name);
@@ -6432,11 +7043,13 @@ function activateAgencyPanel(view, options = {}) {
   if (panelView === 'dashboard') {
     setupAgencyDashboardControls();
     if (options.resetDate !== false) resetAgencyDashboardDateToToday();
-    loadAgencyDashboardOperators();
+    setAgencyDashboardMode(localStorage.getItem(AGENCY_DASHBOARD_MODE_KEY) === 'bonuses' ? 'bonuses' : 'total', { persist: false });
   } else if (panelView === 'inbox') {
+    stopAgencyDashboardAutoBalance();
     closeAgencyDashboardCalendar();
     if (syncAgencyInboxAccess() && options.reloadInbox) reloadWorkspaceEmbed('agency-inbox');
   } else if (panelView === 'favorites') {
+    stopAgencyDashboardAutoBalance();
     closeAgencyDashboardCalendar();
     if (syncAgencyFavoritesAccess()) {
       mountAgencyFavoritesView();
@@ -6451,8 +7064,42 @@ function activateAgencyPanel(view, options = {}) {
       }
     }
   } else {
+    stopAgencyDashboardAutoBalance();
     closeAgencyDashboardCalendar();
   }
+}
+
+function readRememberedAccess() {
+  try {
+    return JSON.parse(localStorage.getItem(REMEMBER_ACCESS_KEY) || 'null') || null;
+  } catch {
+    return null;
+  }
+}
+
+function syncRememberedAccess(needsSetup = false) {
+  const saved = readRememberedAccess();
+  rememberAccessRow?.classList.toggle('hidden', needsSetup);
+  if (rememberAccessInput) rememberAccessInput.checked = !needsSetup && Boolean(saved?.remember);
+  if (!needsSetup && saved?.remember) {
+    if (usernameInput) usernameInput.value = saved.username || '';
+    if (passwordInput) passwordInput.value = saved.password || '';
+  } else {
+    if (usernameInput) usernameInput.value = '';
+    if (passwordInput) passwordInput.value = '';
+  }
+}
+
+function saveRememberedAccessAfterLogin(username, password) {
+  if (!rememberAccessInput?.checked || setupMode) {
+    localStorage.removeItem(REMEMBER_ACCESS_KEY);
+    return;
+  }
+  localStorage.setItem(REMEMBER_ACCESS_KEY, JSON.stringify({
+    remember: true,
+    username: String(username || ''),
+    password: String(password || '')
+  }));
 }
 
 function showLogin(needsSetup = false) {
@@ -6470,11 +7117,13 @@ function showLogin(needsSetup = false) {
   if (passwordInput) passwordInput.placeholder = needsSetup ? 'Create your password' : 'Write your password';
   accessBtn.textContent = needsSetup ? 'Create Account' : 'Log In';
   accessStatus.textContent = '';
+  syncRememberedAccess(needsSetup);
   accessScreen.classList.remove('hidden');
-  setTimeout(() => usernameInput?.focus(), 50);
+  setTimeout(() => (usernameInput?.value ? passwordInput : usernameInput)?.focus(), 50);
 }
 
-function showMandarinHome() {
+function showMandarinHome(options = {}) {
+  const resetPanel = options.resetPanel !== false;
   installAgencyRuntimeStyles();
   if (!localStorage.getItem(GLOBAL_THEME_KEY)) {
     localStorage.setItem(GLOBAL_THEME_KEY, 'dark');
@@ -6523,28 +7172,33 @@ function showMandarinHome() {
   syncAgencyNavLocks();
   syncAdminPanelRoute(false);
   setSettingsRoute(false);
-  if (agencyAccountTab === 'salary' && currentUser?.role !== 'director') {
+  if (['salary', 'agency-admin'].includes(agencyAccountTab) && currentUser?.role !== 'director') {
     agencyAccountTab = 'ladies';
     localStorage.setItem(AGENCY_ACCOUNT_TAB_KEY, agencyAccountTab);
   }
-  if (agencyAccountTab === 'translator' && !['admin', 'operator'].includes(currentUser?.role)) {
+  if (agencyAccountTab === 'translator') {
     agencyAccountTab = 'ladies';
     localStorage.setItem(AGENCY_ACCOUNT_TAB_KEY, agencyAccountTab);
   }
   syncAgencyAccountTabs();
   syncAgencyInboxAccess();
   syncAgencyFavoritesAccess();
-  const storedAgencyPanel = localStorage.getItem(AGENCY_PANEL_KEY) || 'home';
-  const initialAgencyPanel = !isActiveProfileOnline()
-    ? 'home'
-    : storedAgencyPanel;
-  activateAgencyPanel(initialAgencyPanel, { persist: false });
-  loadAgencyAccountManager().catch(error => {
-    if (agencyAccountStatus) agencyAccountStatus.textContent = error.message || 'Could not load profiles';
-  });
+  if (resetPanel) {
+    localStorage.setItem(AGENCY_PANEL_KEY, 'home');
+    activateAgencyPanel('home', { persist: false });
+  } else {
+    const restoredPanel = normalizeAgencyPanel(localStorage.getItem(AGENCY_PANEL_KEY) || 'home');
+    activateAgencyPanel(restoredPanel, { persist: false });
+  }
+  if (isAgencyWebsite()) {
+    loadAgencyAccountManager().catch(error => {
+      if (agencyAccountStatus) agencyAccountStatus.textContent = error.message || 'Could not load profiles';
+    });
+  }
 }
 
 function agencyUserName(userId) {
+  if (String(currentUser?.id || '') === String(userId || '')) return currentUser?.name || currentUser?.username || currentUser?.id || '';
   const user = agencyUsers.find(item => String(item.id || '') === String(userId || ''));
   return user ? (user.name || user.username || user.id) : '';
 }
@@ -6643,6 +7297,12 @@ function renderAgencyRoleSelect(user) {
 }
 
 function renderAgencyAdministratorSelect(user) {
+  if (currentUser?.role === 'admin') {
+    const label = String(user.managerId || '') === String(currentUser.id || '')
+      ? (currentUser.name || currentUser.username || 'Administrator')
+      : 'No administrator';
+    return renderAgencyLockedCombo(label);
+  }
   const admins = agencyAdmins();
   const selectedManagerId = admins.some(admin => String(admin.id || '') === String(user.managerId || ''))
     ? String(user.managerId || '')
@@ -6697,12 +7357,12 @@ function renderAgencyUserRows(rows, emptyText) {
 
 function renderAgencyAccountManager() {
   if (!agencyAccountRows) return;
-  if (currentUser?.role === 'operator' && ['operators', 'salary'].includes(agencyAccountTab)) {
+  if ((currentUser?.role === 'operator' || isDesktopAdminSession()) && ['operators', 'salary', 'agency-admin'].includes(agencyAccountTab)) {
     agencyAccountTab = 'ladies';
     localStorage.setItem(AGENCY_ACCOUNT_TAB_KEY, agencyAccountTab);
     syncAgencyAccountTabs();
   }
-  if (agencyAccountTab === 'salary' && currentUser?.role !== 'director') {
+  if (['salary', 'agency-admin'].includes(agencyAccountTab) && currentUser?.role !== 'director') {
     agencyAccountTab = 'ladies';
     localStorage.setItem(AGENCY_ACCOUNT_TAB_KEY, agencyAccountTab);
     syncAgencyAccountTabs();
@@ -6710,18 +7370,22 @@ function renderAgencyAccountManager() {
   const query = String(agencyAccountSearch?.value || '').trim().toLowerCase();
   const salaryTab = agencyAccountTab === 'salary';
   const translatorTab = agencyAccountTab === 'translator';
+  const agencyAdminTab = agencyAccountTab === 'agency-admin';
   const userTab = agencyAccountTab === 'operators';
   const accountSection = agencyAccountRows.closest('.agency-account-manager');
   accountSection?.classList.toggle('is-salary-mode', salaryTab);
   accountSection?.classList.toggle('is-translator-mode', translatorTab);
-  agencyAccountTableWrap?.classList.toggle('hidden', salaryTab || translatorTab);
+  accountSection?.classList.toggle('is-agency-admin-mode', agencyAdminTab && currentUser?.role === 'director');
+  agencyAccountTableWrap?.classList.toggle('hidden', salaryTab || translatorTab || agencyAdminTab);
   agencySalaryPanel?.classList.toggle('hidden', !salaryTab);
   agencyTranslatorPanel?.classList.toggle('hidden', !translatorTab);
+  agencyAdminPanel?.classList.toggle('hidden', !agencyAdminTab || currentUser?.role !== 'director');
   if (agencyAddProfileBtn) {
-    agencyAddProfileBtn.classList.toggle('hidden', salaryTab || translatorTab || currentUser?.role === 'operator');
+    agencyAddProfileBtn.classList.toggle('hidden', salaryTab || translatorTab || agencyAdminTab || currentUser?.role === 'operator' || isDesktopAdminSession());
     agencyAddProfileBtn.textContent = userTab ? '+ Add User' : '+ Add Profile';
   }
   agencySalarySettingsBtn?.classList.toggle('hidden', currentUser?.role !== 'director');
+  agencyAdminSettingsBtn?.classList.toggle('hidden', currentUser?.role !== 'director');
   agencyTranslatorSettingsBtn?.classList.toggle('hidden', !['admin', 'operator'].includes(currentUser?.role));
   if (translatorTab && !['admin', 'operator'].includes(currentUser?.role)) {
     agencyAccountTab = 'ladies';
@@ -6734,6 +7398,19 @@ function renderAgencyAccountManager() {
     if (agencyAccountCount) agencyAccountCount.textContent = '-';
     if (agencyAccountStatus) agencyAccountStatus.textContent = '';
     loadSalaryRates();
+    return;
+  }
+  if (agencyAdminTab) {
+    if (currentUser?.role !== 'director') {
+      agencyAccountTab = 'ladies';
+      localStorage.setItem(AGENCY_ACCOUNT_TAB_KEY, agencyAccountTab);
+      syncAgencyAccountTabs();
+      renderAgencyAccountManager();
+      return;
+    }
+    if (agencyAccountCount) agencyAccountCount.textContent = '-';
+    if (agencyAccountStatus) agencyAccountStatus.textContent = '';
+    loadAgencyAccessSettings();
     return;
   }
   if (translatorTab) {
@@ -6774,7 +7451,9 @@ function renderAgencyAccountManager() {
     return;
   }
   const adminSelfMode = currentUser?.role === 'admin';
-  const canManageProfiles = ['director', 'admin'].includes(currentUser?.role);
+  const desktopAdminMode = isDesktopAdminSession();
+  const operatorSelfMode = currentUser?.role === 'operator';
+  const canManageProfiles = ['director', 'admin'].includes(currentUser?.role) && !desktopAdminMode;
   const admins = agencyAdmins();
   const operators = agencyOperators();
   const rows = agencyProfiles.filter(profile => {
@@ -6784,13 +7463,19 @@ function renderAgencyAccountManager() {
   if (agencyAccountCount) agencyAccountCount.textContent = String(rows.length);
   agencyAccountRows.innerHTML = rows.map((profile, index) => `
     <tr data-profile-id="${escapeAttr(profile.id)}">
-      <td class="agency-col-select"><input type="checkbox" aria-label="Select ${escapeAttr(profile.name || profile.id)}"></td>
+      <td class="agency-col-select">
+        ${operatorSelfMode || desktopAdminMode ? '<span aria-hidden="true"></span>' : `<input type="checkbox" aria-label="Select ${escapeAttr(profile.name || profile.id)}">`}
+      </td>
       <td class="agency-col-number">${index + 1}</td>
       <td><strong>${escapeHtml(profile.name || `Profile ${profile.id}`)}</strong></td>
       <td><span class="agency-profile-id">${escapeHtml(profile.id)}</span></td>
       <td class="agency-col-material">${renderAgencyMaterialButton(profile)}</td>
       <td>
-        ${adminSelfMode
+        ${operatorSelfMode
+          ? renderAgencyLockedCombo(currentUser?.name || currentUser?.username || 'Me')
+          : desktopAdminMode
+          ? renderAgencyLockedCombo(agencyUserName(profile.assignedUserId) || 'None')
+          : adminSelfMode
           ? renderAgencyCombo({
               field: 'profile-operator',
               value: profile.assignedUserId || '',
@@ -6805,12 +7490,17 @@ function renderAgencyAccountManager() {
               value: profile.assignedUserId || '',
               options: [
                 { value: '', label: 'None' },
+                ...admins.map(user => ({ value: user.id, label: user.name || user.username || user.id })),
                 ...operators.map(user => ({ value: user.id, label: user.name || user.username || user.id }))
               ]
-            })}
+            })} 
       </td>
       <td>
-        ${adminSelfMode
+        ${operatorSelfMode
+          ? renderAgencyLockedCombo(agencyUserName(profile.ownerAdminId || currentUser?.managerId) || 'Administrator')
+          : desktopAdminMode
+          ? renderAgencyLockedCombo(currentUser?.name || currentUser?.username || 'Administrator')
+          : adminSelfMode
           ? renderAgencyLockedCombo(currentUser?.name || currentUser?.username || 'Administrator')
           : renderAgencyCombo({
               field: 'profile-admin',
@@ -6944,16 +7634,119 @@ function agencyDashboardProfileDayData(dateValue) {
   return day || { date: dateValue, total: 0, profiles: [] };
 }
 
+function agencyDashboardMonthRange() {
+  const year = agencyDashboardYearValue();
+  const month = Number(agencyDashboardMonth || 1);
+  const last = new Date(year, month, 0).getDate();
+  return {
+    from: `${year}-${String(month).padStart(2, '0')}-01`,
+    to: `${year}-${String(month).padStart(2, '0')}-${String(last).padStart(2, '0')}`
+  };
+}
+
+function isAgencyDashboardTotalVisible() {
+  return document.body.classList.contains('agency-dashboard-active') && agencyDashboardMode === 'total';
+}
+
+function stopAgencyDashboardAutoBalance() {
+  if (agencyDashboardAutoBalanceTimer) clearTimeout(agencyDashboardAutoBalanceTimer);
+  agencyDashboardAutoBalanceTimer = null;
+}
+
+function scheduleAgencyDashboardAutoBalance(delay = 2500) {
+  stopAgencyDashboardAutoBalance();
+  if (!isAgencyDashboardTotalVisible()) return;
+  agencyDashboardAutoBalanceTimer = setTimeout(() => {
+    agencyDashboardAutoBalanceTimer = null;
+    if (isAgencyDashboardTotalVisible()) startAgencyDashboardBalanceRefresh({ auto: true });
+  }, delay);
+}
+
+function setupAgencyDashboardBonusDates() {
+  if (agencyDashboardBonusDateInitialized) return;
+  const today = todayDateInputValue();
+  if (agencyDashboardBonusFrom && !agencyDashboardBonusFrom.value) agencyDashboardBonusFrom.value = today;
+  if (agencyDashboardBonusTo && !agencyDashboardBonusTo.value) agencyDashboardBonusTo.value = today;
+  agencyDashboardBonusDateInitialized = true;
+}
+
+function setupAgencyDashboardBonusProfiles(rows = []) {
+  if (!agencyDashboardBonusProfile) return;
+  const current = String(agencyDashboardBonusProfile.value || '');
+  const byId = new Map();
+  const dashboardProfiles = isAgencyDesktopApp() && ['admin', 'operator'].includes(currentUser?.role)
+    ? availableProfiles
+    : (agencyProfiles?.length ? agencyProfiles : availableProfiles);
+  for (const profile of dashboardProfiles || []) {
+    const id = String(profile.id || '').trim();
+    if (id) byId.set(id, profile.name || id);
+  }
+  for (const row of rows || []) {
+    const id = String(row.profileId || '').trim();
+    if (!id || byId.has(id)) continue;
+    if (isAgencyDesktopApp() && ['admin', 'operator'].includes(currentUser?.role)) continue;
+    byId.set(id, row.profileName || id);
+  }
+  const options = ['<option value="">All profiles</option>']
+    .concat([...byId.entries()]
+      .sort((a, b) => String(a[1]).localeCompare(String(b[1])))
+      .map(([id, name]) => `<option value="${escapeAttr(id)}">${escapeHtml(name)}${name === id ? '' : ` (${escapeHtml(id)})`}</option>`));
+  agencyDashboardBonusProfile.innerHTML = options.join('');
+  if (current && byId.has(current)) agencyDashboardBonusProfile.value = current;
+}
+
+function agencyDashboardBonusRange() {
+  setupAgencyDashboardBonusDates();
+  let from = String(agencyDashboardBonusFrom?.value || todayDateInputValue()).slice(0, 10);
+  let to = String(agencyDashboardBonusTo?.value || from).slice(0, 10);
+  if (from && to && from > to) [from, to] = [to, from];
+  return { from, to };
+}
+
+function setAgencyDashboardBonusLoading(loading) {
+  agencyDashboardBonusLoader?.classList.toggle('hidden', !loading);
+  agencyDashboardBonusTotal?.classList.toggle('loading', loading);
+  if (agencyDashboardBonusApplyBtn) agencyDashboardBonusApplyBtn.disabled = loading;
+}
+
+function setAgencyDashboardMode(mode, options = {}) {
+  agencyDashboardMode = mode === 'bonuses' ? 'bonuses' : 'total';
+  if (options.persist !== false) localStorage.setItem(AGENCY_DASHBOARD_MODE_KEY, agencyDashboardMode);
+  const isBonuses = agencyDashboardMode === 'bonuses';
+  if (isBonuses) setupAgencyDashboardBonusDates();
+  if (isBonuses) setupAgencyDashboardBonusProfiles(agencyDashboardBonusesData);
+  agencyDashboardStartBalanceBtn?.classList.toggle('primary', !isBonuses);
+  agencyDashboardBonusesBtn?.classList.toggle('primary', isBonuses);
+  agencyDashboardList?.classList.toggle('hidden', isBonuses);
+  agencyDashboardSummary?.classList.toggle('hidden', isBonuses || !agencyDashboardRowsData.length);
+  agencyDashboardBonuses?.classList.toggle('hidden', !isBonuses);
+  agencyDashboardCalendar?.classList.add('hidden');
+  document.body.classList.remove('agency-dashboard-calendar-open');
+  if (isBonuses) stopAgencyDashboardAutoBalance();
+  if (options.silent) return;
+  if (isBonuses) loadAgencyDashboardBonuses();
+  else loadAgencyDashboardOperators();
+}
+
 function renderAgencyDashboardRows() {
   if (!agencyDashboardRows) return;
   const query = String(agencyDashboardSearch?.value || '').trim().toLowerCase();
   const roleLabel = role => role === 'admin' ? 'ADMINISTRATOR' : role === 'director' ? 'OWNER' : 'OPERATOR';
-  const rows = agencyDashboardRowsData.filter(row => {
+  const scopedRows = isAgencyDesktopApp() && ['admin', 'operator'].includes(currentUser?.role)
+    ? agencyDashboardRowsData.filter(row =>
+        String(row.operatorId || '') === String(currentUser?.id || '') ||
+        String(row.login || '').toLowerCase() === String(currentUser?.username || '').toLowerCase()
+      )
+    : agencyDashboardRowsData;
+  const rows = scopedRows.filter(row => {
     const haystack = `${row.name || ''} ${row.login || ''} ${row.role || ''}`.toLowerCase();
     return !query || haystack.includes(query);
   });
   if (agencyDashboardCount) agencyDashboardCount.textContent = String(rows.length);
-  agencyDashboardRows.innerHTML = rows.map((row, index) => `
+  const totalIncome = rows.reduce((sum, row) => sum + Number(row.income || 0), 0);
+  const totalGifts = rows.reduce((sum, row) => sum + Number(row.gifts || 0), 0);
+  const totalSalary = rows.reduce((sum, row) => sum + Number(row.salary || 0), 0);
+  const bodyRows = rows.map((row, index) => `
     <tr data-operator-id="${escapeAttr(row.operatorId || '')}" class="${row.active === false ? 'agency-dashboard-row-inactive' : ''}">
       <td>${index + 1}</td>
       <td>
@@ -6967,18 +7760,67 @@ function renderAgencyDashboardRows() {
       </td>
       <td>${escapeHtml(String(row.profileCount || 0))}</td>
       <td><b>${money(row.income || 0)}</b></td>
+      <td><b class="agency-dashboard-gifts-amount">${money(row.gifts || 0)}</b></td>
       <td><b>${percentText(row.percent || 0)}</b></td>
       <td><b>${money(row.salary || 0)}</b></td>
     </tr>
-  `).join('') || '<tr><td colspan="8" class="agency-dashboard-empty">No operators for this period</td></tr>';
+  `).join('');
+  if (agencyDashboardSummaryIncome) agencyDashboardSummaryIncome.textContent = money(totalIncome);
+  if (agencyDashboardSummaryGifts) agencyDashboardSummaryGifts.textContent = money(totalGifts);
+  if (agencyDashboardSummarySalary) agencyDashboardSummarySalary.textContent = money(totalSalary);
+  agencyDashboardSummary?.classList.toggle('hidden', !rows.length);
+  agencyDashboardRows.innerHTML = rows.length
+    ? bodyRows
+    : '<tr><td colspan="9" class="agency-dashboard-empty">No operators for this period</td></tr>';
 }
 
-async function loadAgencyDashboardOperators() {
+function renderAgencyDashboardBonuses() {
+  if (!agencyDashboardBonusesRows) return;
+  const query = String(agencyDashboardSearch?.value || '').trim().toLowerCase();
+  const scopedRows = isAgencyDesktopApp() && ['admin', 'operator'].includes(currentUser?.role)
+    ? agencyDashboardBonusesData.filter(row =>
+        String(row.operatorId || '') === String(currentUser?.id || '') ||
+        String(row.operatorLogin || '').toLowerCase() === String(currentUser?.username || '').toLowerCase()
+      )
+    : agencyDashboardBonusesData;
+  const rows = scopedRows.filter(row => {
+    const haystack = `${row.type || ''} ${row.by || ''} ${row.to || ''} ${row.profileName || ''} ${row.profileId || ''} ${row.operatorName || ''} ${row.operatorLogin || ''}`.toLowerCase();
+    return !query || haystack.includes(query);
+  });
+  const visibleTotal = rows.reduce((sum, row) => sum + (row.gift ? 0 : Number(row.amount || 0)), 0);
+  const visibleGifts = rows.reduce((sum, row) => sum + (row.gift ? Number(row.amount || 0) : 0), 0);
+  if (agencyDashboardBonusTotal) agencyDashboardBonusTotal.textContent = money(visibleTotal);
+  if (agencyDashboardBonusGifts) agencyDashboardBonusGifts.textContent = money(visibleGifts);
+  if (agencyDashboardCount) agencyDashboardCount.textContent = String(rows.length);
+  agencyDashboardBonusesRows.innerHTML = rows.map((row, index) => `
+    <tr class="${row.gift ? 'agency-dashboard-gift-row' : ''}">
+      <td>${index + 1}</td>
+      <td>${escapeHtml(row.type || '-')}${row.gift ? '<span class="agency-dashboard-gift-chip">Gift</span>' : ''}</td>
+      <td>${escapeHtml(row.by || '-')}</td>
+      <td>
+        <span class="agency-dashboard-name">${escapeHtml(row.profileName || row.profileId || '-')}</span>
+        ${row.profileId ? `<small class="agency-dashboard-inactive-date">${escapeHtml(row.profileId)}</small>` : ''}
+      </td>
+      <td>
+        <span class="agency-dashboard-name">${escapeHtml(row.operatorName || row.operatorLogin || '-')}</span>
+        ${row.operatorLogin ? `<small class="agency-dashboard-inactive-date">${escapeHtml(row.operatorLogin)}</small>` : ''}
+      </td>
+      <td>${escapeHtml(row.date || '-')}</td>
+      <td><b>${money(row.amount || 0)}</b></td>
+    </tr>
+  `).join('') || '<tr><td colspan="7" class="agency-dashboard-empty">No bonuses for this period</td></tr>';
+}
+
+async function loadAgencyDashboardOperators(options = {}) {
   if (!agencyDashboardRows) return;
+  agencyDashboardMode = 'total';
   setupAgencyDashboardControls();
   document.body.classList.remove('agency-dashboard-calendar-open');
   agencyDashboardList?.classList.remove('hidden');
+  agencyDashboardBonuses?.classList.add('hidden');
   agencyDashboardCalendar?.classList.add('hidden');
+  agencyDashboardStartBalanceBtn?.classList.add('primary');
+  agencyDashboardBonusesBtn?.classList.remove('primary');
   if (agencyDashboardStatus) agencyDashboardStatus.textContent = 'Loading dashboard...';
   try {
     const params = new URLSearchParams({
@@ -6995,6 +7837,136 @@ async function loadAgencyDashboardOperators() {
     agencyDashboardRowsData = [];
     renderAgencyDashboardRows();
     if (agencyDashboardStatus) agencyDashboardStatus.textContent = error.message || 'Could not load dashboard';
+  } finally {
+    if (!options.skipAutoBalance) scheduleAgencyDashboardAutoBalance();
+  }
+}
+
+async function loadAgencyDashboardBonuses() {
+  if (!agencyDashboardBonusesRows) return;
+  agencyDashboardMode = 'bonuses';
+  setupAgencyDashboardControls();
+  setupAgencyDashboardBonusDates();
+  document.body.classList.remove('agency-dashboard-calendar-open');
+  agencyDashboardList?.classList.add('hidden');
+  agencyDashboardCalendar?.classList.add('hidden');
+  agencyDashboardBonuses?.classList.remove('hidden');
+  agencyDashboardStartBalanceBtn?.classList.remove('primary');
+  agencyDashboardBonusesBtn?.classList.add('primary');
+  agencyDashboardBonusesData = [];
+  agencyDashboardBonusesTotal = 0;
+  agencyDashboardBonusesGiftsTotal = 0;
+  setupAgencyDashboardBonusProfiles();
+  renderAgencyDashboardBonuses();
+  setAgencyDashboardBonusLoading(true);
+  if (agencyDashboardStatus) agencyDashboardStatus.textContent = '';
+  try {
+    const range = agencyDashboardBonusRange();
+    const profileId = String(agencyDashboardBonusProfile?.value || '').trim();
+    const params = new URLSearchParams({
+      year: String(agencyDashboardYearValue()),
+      month: String(agencyDashboardMonth),
+      from: range.from,
+      to: range.to
+    });
+    if (profileId) params.set('profileId', profileId);
+    const response = await fetch(`/api/agencyos/dashboard/bonuses?${params.toString()}`);
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || 'Could not load bonuses');
+    agencyDashboardBonusesData = Array.isArray(result.rows) ? result.rows : [];
+    agencyDashboardBonusesTotal = Number(result.total || 0);
+    agencyDashboardBonusesGiftsTotal = Number(result.giftsTotal || 0);
+    setupAgencyDashboardBonusProfiles(result.profiles || agencyDashboardBonusesData);
+    renderAgencyDashboardBonuses();
+    if (agencyDashboardStatus) {
+      const profileName = profileId
+        ? (agencyDashboardBonusProfile?.selectedOptions?.[0]?.textContent || profileId)
+        : '';
+      const periodText = range.from === range.to
+        ? `Bonuses for ${formatSalaryPeriodValue(range.from)}.`
+        : `Bonuses from ${formatSalaryPeriodValue(range.from)} to ${formatSalaryPeriodValue(range.to)}.`;
+      agencyDashboardStatus.textContent = profileName ? `${periodText} ${profileName}.` : periodText;
+    }
+  } catch (error) {
+    agencyDashboardBonusesData = [];
+    agencyDashboardBonusesTotal = 0;
+    agencyDashboardBonusesGiftsTotal = 0;
+    renderAgencyDashboardBonuses();
+    if (agencyDashboardStatus) agencyDashboardStatus.textContent = error.message || 'Could not load bonuses';
+  } finally {
+    setAgencyDashboardBonusLoading(false);
+  }
+}
+
+async function startAgencyDashboardBalanceRefresh(options = {}) {
+  const trigger = agencyDashboardStartBalanceBtn;
+  if (!trigger) return;
+  if (agencyDashboardBalanceRefreshInFlight) return;
+  agencyDashboardBalanceRefreshInFlight = true;
+  stopAgencyDashboardAutoBalance();
+  const isAuto = options.auto === true;
+  const isManual = !isAuto;
+  const oldText = trigger.textContent || 'Total Balance';
+  if (isManual) trigger.disabled = true;
+  if (agencyDashboardBonusesBtn) agencyDashboardBonusesBtn.disabled = true;
+  if (isManual) trigger.textContent = 'Loading...';
+  const targetDate = dreamDateInputValue();
+  if (agencyDashboardStatus) {
+    agencyDashboardStatus.textContent = isAuto
+      ? 'Syncing actual balance...'
+      : `Refreshing balance for ${formatSalaryPeriodValue(targetDate)}...`;
+  }
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 65000);
+  try {
+    const response = await fetch('/api/agencyos/dashboard/operators/month-actual/refresh', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      signal: controller.signal,
+      body: JSON.stringify({
+        year: agencyDashboardYearValue(),
+        month: agencyDashboardMonth,
+        date: targetDate,
+        auto: isAuto,
+        force: isManual,
+        limit: isAuto ? 5 : 6,
+        staleMinutes: 15
+      })
+    });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || 'Could not refresh operator balances');
+    await loadAgencyDashboardOperators({ skipAutoBalance: true });
+    if (agencyDashboardCalendarData?.operator?.operatorId) {
+      await openAgencyDashboardOperator(agencyDashboardCalendarData.operator.operatorId);
+    }
+    if (agencyDashboardStatus) {
+      const refreshedDays = Array.isArray(result.refreshed) ? result.refreshed : [];
+      const skippedDays = Array.isArray(result.skipped) ? result.skipped : [];
+      const refreshed = refreshedDays.length;
+      const remaining = Number(result.remainingMissing || 0);
+      agencyDashboardStatus.textContent = refreshed
+        ? `Balance synced: ${refreshed} day(s) loaded${remaining ? `, ${remaining} missing left` : ''}.`
+        : `Balance already actual for ${formatSalaryPeriodValue(skippedDays[0] || targetDate)}.`;
+    }
+    const remaining = Number(result.remainingMissing || 0);
+    if (isAuto && remaining > 0 && isAgencyDashboardTotalVisible()) {
+      scheduleAgencyDashboardAutoBalance(2500);
+    } else if (isAgencyDashboardTotalVisible()) {
+      scheduleAgencyDashboardAutoBalance(15 * 60 * 1000);
+    }
+  } catch (error) {
+    if (agencyDashboardStatus) {
+      agencyDashboardStatus.textContent = error?.name === 'AbortError'
+        ? 'Dream did not answer in time. Try again later.'
+        : (error.message || 'Could not refresh balances');
+    }
+    if (isAgencyDashboardTotalVisible()) scheduleAgencyDashboardAutoBalance(60 * 1000);
+  } finally {
+    clearTimeout(timeout);
+    if (isManual) trigger.disabled = false;
+    if (agencyDashboardBonusesBtn) agencyDashboardBonusesBtn.disabled = false;
+    if (isManual) trigger.textContent = oldText;
+    agencyDashboardBalanceRefreshInFlight = false;
   }
 }
 
@@ -7056,8 +8028,7 @@ function renderAgencyDashboardCalendar() {
   const today = dreamDateInputValue();
   const defaultDate = agencyDashboardSelectedDate?.startsWith(monthPrefix)
     ? agencyDashboardSelectedDate
-    : ((agencyDashboardCalendarData.dailyProfiles || []).map(item => item.date).filter(date => String(date).startsWith(monthPrefix)).sort().at(-1)
-      || (today.startsWith(monthPrefix) ? today : `${monthPrefix}-01`));
+    : (today.startsWith(monthPrefix) ? today : `${monthPrefix}-01`);
   renderAgencyDashboardDay(defaultDate);
 }
 
@@ -7111,9 +8082,7 @@ async function saveAgencyProfileAssignment(row) {
   if (!profileId) return;
   const usedByValue = row.querySelector('[data-combo-field="profile-operator"]')?.dataset?.value || '';
   const adminSelfMode = currentUser?.role === 'admin';
-  const operatorId = adminSelfMode
-    ? (String(usedByValue) && String(usedByValue) !== String(currentUser?.id || '') ? usedByValue : '')
-    : usedByValue;
+  const operatorId = usedByValue;
   const adminId = adminSelfMode
     ? currentUser.id
     : (row.querySelector('[data-combo-field="profile-admin"]')?.dataset?.value || '');
@@ -7127,11 +8096,12 @@ async function saveAgencyProfileAssignment(row) {
   if (!response.ok) throw new Error(result.error || 'Could not save assignment');
   agencyProfiles = result.profiles || agencyProfiles;
   agencyUsers = result.users || agencyUsers;
-  renderAgencyAccountManager();
+  await refreshSessionQuietly();
+  await loadAgencyAccountManager();
   if (agencyAccountStatus) agencyAccountStatus.textContent = '';
 }
 
-function applySession(result, forceProfileChoice = false) {
+function applySession(result, forceProfileChoice = false, options = {}) {
   currentUser = result.user;
   document.body.classList.remove('auth-pending', 'auth-login', 'profile-choice-auth');
   document.body.classList.add('auth-ready');
@@ -7144,6 +8114,7 @@ function applySession(result, forceProfileChoice = false) {
       : currentUser.role === 'mentor' ? 'Mentor'
         : 'Operator';
   availableProfiles = result.profiles || [];
+  if (!agencyProfiles.length || isAgencyDesktopApp()) agencyProfiles = availableProfiles;
   profilesAdminList.innerHTML = currentUser.role === 'director'
     ? '<div class="admin-empty">Loading profiles...</div>'
     : availableProfiles.map(profile => `
@@ -7169,7 +8140,7 @@ function applySession(result, forceProfileChoice = false) {
   adminBtn.classList.toggle('hidden', currentUser.role === 'mentor');
   setupMyStatsDefaults();
   accessScreen.classList.add('hidden');
-  showMandarinHome();
+  showMandarinHome({ resetPanel: options.resetPanel !== false });
   return;
   if (currentUser.role === 'director') {
     activeProfileId = '';
@@ -7577,16 +8548,19 @@ function renderAdminProfileChecklist(profiles, options = {}) {
 
 async function enterCrm() {
   accessStatus.textContent = setupMode ? 'Creating administrator...' : 'Signing in...';
+  const loginUsername = usernameInput.value.trim();
+  const loginPassword = passwordInput.value;
   try {
     const response = await fetch(setupMode ? '/api/auth/setup' : '/api/auth/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username: usernameInput.value.trim(), password: passwordInput.value })
+      body: JSON.stringify({ username: loginUsername, password: loginPassword })
     });
     const result = await response.json();
     if (!response.ok) throw new Error(result.error || 'Could not sign in');
-    passwordInput.value = '';
-    applySession(result, !(activeProfileId && ladyConnected));
+    saveRememberedAccessAfterLogin(loginUsername, loginPassword);
+    if (!rememberAccessInput?.checked || setupMode) passwordInput.value = '';
+    applySession(result, !(activeProfileId && ladyConnected), { resetPanel: true });
   } catch (error) {
     accessStatus.textContent = error.message;
   }
@@ -7924,7 +8898,7 @@ function renderAgencyTranslatorSettings(settings = currentUser?.translator || {}
 }
 
 async function loadAgencyTranslatorSettings() {
-  if (!agencyTranslatorPanel || !['admin', 'operator'].includes(currentUser?.role)) return;
+  if (!agencyTranslatorPanel || !currentUser) return;
   try {
     const response = await fetch('/api/translator/settings');
     const result = await response.json();
@@ -8005,22 +8979,34 @@ async function testAgencyTranslator() {
 }
 
 function renderAgencyAccessSettings(settings = currentUser?.agency || {}) {
-  if (!agencyAccessSection) return;
   const visible = currentUser?.role === 'director';
-  agencyAccessSection.classList.toggle('hidden', !visible);
+  agencyAccessSection?.classList.toggle('hidden', !visible);
   if (!visible) return;
   if (agencyAccessUrl) agencyAccessUrl.value = settings.baseUrl || 'https://agency.dream-singles.com';
+  if (agencyAdminUrl) agencyAdminUrl.value = settings.baseUrl || 'https://agency.dream-singles.com';
   if (agencyAccessLogin) agencyAccessLogin.value = settings.username || '';
+  if (agencyAdminLogin) agencyAdminLogin.value = settings.username || '';
   if (agencyAccessPassword) {
     agencyAccessPassword.value = '';
     agencyAccessPassword.placeholder = settings.hasPassword
       ? 'Password saved. Leave blank to keep it.'
       : 'Agency password';
   }
+  if (agencyAdminPassword) {
+    agencyAdminPassword.value = '';
+    agencyAdminPassword.placeholder = settings.hasPassword
+      ? 'Password saved. Leave blank to keep it.'
+      : 'Agency admin password';
+  }
   if (agencyAccessStatus) {
     agencyAccessStatus.textContent = settings.hasPassword
       ? 'Global Agency access saved. It will be used for all team leads and operators.'
       : 'Set one Agency access for all team leads and operators.';
+  }
+  if (agencyAdminStatus) {
+    agencyAdminStatus.textContent = settings.hasPassword
+      ? 'Agency admin access saved. Operator balances will use this login.'
+      : 'Set Agency admin login and password for operator balance refresh.';
   }
 }
 
@@ -8033,8 +9019,10 @@ async function loadAgencyAccessSettings() {
     currentUser = { ...currentUser, agency: result.settings };
     renderAgencyAccessSettings(result.settings);
   } catch (error) {
-    agencyAccessSection.classList.remove('hidden');
+    agencyAccessSection?.classList.remove('hidden');
+    agencyAdminPanel?.classList.remove('hidden');
     if (agencyAccessStatus) agencyAccessStatus.textContent = error.message || 'Could not load Agency access';
+    if (agencyAdminStatus) agencyAdminStatus.textContent = error.message || 'Could not load Agency admin access';
   }
 }
 
@@ -8091,49 +9079,70 @@ async function saveOperatorTranslatorSettings() {
   }
 }
 
-async function saveAgencyAccessSettings() {
-  if (!agencyAccessSaveBtn) return;
-  agencyAccessSaveBtn.disabled = true;
-  agencyAccessSaveBtn.textContent = 'Saving...';
+function agencyAccessFormValues(source = 'legacy') {
+  const usePanel = source === 'panel';
+  return {
+    baseUrl: (usePanel ? agencyAdminUrl : agencyAccessUrl)?.value || '',
+    username: (usePanel ? agencyAdminLogin : agencyAccessLogin)?.value || '',
+    password: (usePanel ? agencyAdminPassword : agencyAccessPassword)?.value || ''
+  };
+}
+
+async function saveAgencyAccessSettings(source = 'legacy') {
+  const button = source === 'panel' ? agencyAdminSaveBtn : agencyAccessSaveBtn;
+  const status = source === 'panel' ? agencyAdminStatus : agencyAccessStatus;
+  if (!button) return;
+  button.disabled = true;
+  button.textContent = 'Saving...';
   try {
     const response = await fetch('/api/agency/settings', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        baseUrl: agencyAccessUrl?.value || '',
-        username: agencyAccessLogin?.value || '',
-        password: agencyAccessPassword?.value || ''
-      })
+      body: JSON.stringify(agencyAccessFormValues(source))
     });
     const result = await response.json();
     if (!response.ok) throw new Error(result.error || 'Could not save Agency access');
     currentUser = { ...currentUser, agency: result.settings };
+    if (source === 'panel') agencyAdminFormEditing = false;
     renderAgencyAccessSettings(result.settings);
-    if (agencyAccessStatus) agencyAccessStatus.textContent = 'Agency access saved.';
+    if (status) status.textContent = source === 'panel'
+      ? 'Agency admin access saved. Operator balances will use this login.'
+      : 'Agency access saved.';
   } catch (error) {
-    if (agencyAccessStatus) agencyAccessStatus.textContent = error.message;
+    if (status) status.textContent = error.message;
   } finally {
-    agencyAccessSaveBtn.disabled = false;
-    agencyAccessSaveBtn.textContent = 'Save';
+    button.disabled = false;
+    button.textContent = 'Save';
   }
 }
 
-async function testAgencyAccessSettings() {
-  if (!agencyAccessTestBtn) return;
-  await saveAgencyAccessSettings();
-  agencyAccessTestBtn.disabled = true;
-  agencyAccessTestBtn.textContent = 'Testing...';
-  if (agencyAccessStatus) agencyAccessStatus.textContent = 'Testing Agency access on server...';
+async function testAgencyAccessSettings(source = 'legacy') {
+  const button = source === 'panel' ? agencyAdminTestBtn : agencyAccessTestBtn;
+  const status = source === 'panel' ? agencyAdminStatus : agencyAccessStatus;
+  if (!button) return;
+  const values = agencyAccessFormValues(source);
+  if (!String(values.username || '').trim() || !String(values.password || '').trim()) {
+    if (status) status.textContent = 'Enter Agency admin login and password before testing.';
+    return;
+  }
+  button.disabled = true;
+  button.textContent = 'Testing...';
+  if (status) status.textContent = 'Testing Agency access on server...';
   try {
-    const response = await fetch('/api/agency/test', { method: 'POST' });
+    const response = await fetch('/api/agency/test', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(values)
+    });
     const result = await response.json();
     if (!response.ok) throw new Error(result.error || 'Agency test failed');
-    if (agencyAccessStatus) agencyAccessStatus.textContent = 'Agency access works. Bonuses page opened on server.';
+    if (source === 'panel') agencyAdminFormEditing = false;
+    if (status) status.textContent = 'Agency access works. Bonuses page opened on server.';
   } catch (error) {
-    if (agencyAccessStatus) agencyAccessStatus.textContent = error.message;
+    if (status) status.textContent = error.message;
   } finally {
-    agencyAccessTestBtn.disabled = false;
-    agencyAccessTestBtn.textContent = 'Test';
+    button.disabled = false;
+    button.textContent = 'Test';
   }
 }
 
@@ -8357,6 +9366,9 @@ async function saveAgencyOperatorAdministrator(row) {
   const managerId = row?.querySelector('[data-combo-field="operator-admin"]')?.dataset?.value || '';
   const user = agencyUsers.find(item => String(item.id || '') === String(userId));
   if (!userId || !user) return;
+  const nextManagerId = currentUser?.role === 'admin'
+    ? currentUser.id
+    : managerId;
   const response = await fetch(`/api/admin/users/${encodeURIComponent(userId)}`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
@@ -8364,7 +9376,7 @@ async function saveAgencyOperatorAdministrator(row) {
       name: user.name || user.username || '',
       username: user.username || '',
       role: 'operator',
-      managerId: managerId || currentUser?.id || ''
+      managerId: nextManagerId || ''
     })
   });
   const result = await response.json();
@@ -8384,7 +9396,7 @@ async function saveAgencyUserRole(row) {
       name: user.name || user.username || '',
       username: user.username || '',
       role,
-      managerId: role === 'operator' ? (user.managerId || currentUser?.id || '') : undefined
+      managerId: role === 'operator' ? (user.managerId || (currentUser?.role === 'admin' ? currentUser.id : '')) : undefined
     })
   });
   const result = await response.json();
@@ -8506,6 +9518,7 @@ async function deletePendingProfile() {
   const result = await response.json();
   if (!response.ok) throw new Error(result.error || 'Could not delete profile');
   closeDeleteProfileConfirm();
+  await refreshAgencyLiveData({ reloadPanel: false });
   await loadAdmin();
   if (document.body.classList.contains('mandarin-home-active')) await loadAgencyAccountManager();
   await loadMen();
@@ -8549,6 +9562,7 @@ async function addProfile() {
   if (!response.ok) throw new Error(result.error);
   newProfileId.value = '';
   newProfileName.value = '';
+  await refreshAgencyLiveData({ reloadPanel: false });
   if (document.body.classList.contains('mandarin-home-active')) await loadAgencyAccountManager();
   else await loadAdmin();
   closeAddProfileModal();
@@ -8581,14 +9595,98 @@ async function refreshSession() {
   const response = await fetch('/api/auth/me');
   if (!response.ok) return false;
   const result = await response.json();
-  applySession(result);
-  if ((adminPanelRouteRequested() || localStorage.getItem('dream_crm_view') === 'adminPanel') && ['admin', 'director'].includes(result.user?.role)) {
-    currentView = 'adminPanel';
-    localStorage.setItem('dream_crm_view', 'adminPanel');
-    profileChoiceScreen?.classList.add('hidden');
+  applySession(result, false, { resetPanel: false });
+  return true;
+}
+
+async function refreshSessionQuietly() {
+  const response = await fetch('/api/auth/me');
+  if (!response.ok) return false;
+  const result = await response.json();
+  currentUser = result.user;
+  availableProfiles = result.profiles || [];
+  if (!agencyProfiles.length || isAgencyDesktopApp()) agencyProfiles = availableProfiles;
+  const activeStillAvailable = activeProfileId && availableProfiles.some(profile => String(profile.id || '') === String(activeProfileId));
+  if (!activeStillAvailable) {
+    activeProfileId = '';
+    ladyConnected = false;
+    localStorage.removeItem('dream_crm_profile_id');
+  } else {
+    localStorage.setItem('dream_crm_profile_id', activeProfileId);
+  }
+  if (profileSelect) {
+    profileSelect.innerHTML = availableProfiles.length
+      ? availableProfiles.map(profile => `<option value="${escapeHtml(profile.id)}">${escapeHtml(profile.name)} - ${escapeHtml(profile.id)}</option>`).join('')
+      : '<option value="">No assigned profiles</option>';
+    profileSelect.value = activeProfileId;
+  }
+  const activeProfile = availableProfiles.find(profile => String(profile.id || '') === String(activeProfileId));
+  renderProfileSwitcher(activeProfile);
+  renderSidebarProfileDock();
+  syncRoleNavigation();
+  syncAgencyProfilePowerToggle();
+  syncAgencyNavLocks();
+  syncAgencyAccountTabs();
+  syncAgencyInboxAccess();
+  syncAgencyFavoritesAccess();
+  if (agencyShellUserName) agencyShellUserName.textContent = currentUser?.name || currentUser?.username || 'Account';
+  if (agencyShellAvatar) agencyShellAvatar.textContent = (currentUser?.name || currentUser?.username || 'A').slice(0, 1).toUpperCase();
+  if (agencyShellUserRole) {
+    agencyShellUserRole.textContent = currentUser?.role === 'director'
+      ? 'Owner'
+      : currentUser?.role === 'admin' ? 'Administrator'
+        : currentUser?.role === 'mentor' ? 'Mentor'
+          : 'Operator';
   }
   return true;
 }
+
+let agencyLiveRefreshInProgress = false;
+
+function agencyUiIsBusy() {
+  const modalOpen = element => Boolean(element && !element.classList.contains('hidden'));
+  const activeElement = document.activeElement;
+  return Boolean(
+    document.querySelector('[data-agency-combo].open') ||
+    agencyAdminFormEditing ||
+    (agencyAdminPanel?.contains(activeElement) && !agencyAdminPanel.classList.contains('hidden')) ||
+    (agencyAccessSection?.contains(activeElement) && !agencyAccessSection.classList.contains('hidden')) ||
+    agencyAdminSaveBtn?.disabled ||
+    agencyAdminTestBtn?.disabled ||
+    agencyAccessSaveBtn?.disabled ||
+    agencyAccessTestBtn?.disabled ||
+    modalOpen(addProfileModal) ||
+    modalOpen(profileSendingModal) ||
+    modalOpen(userSettingsModal) ||
+    modalOpen(deleteProfileConfirmModal) ||
+    modalOpen(deleteUserConfirmModal)
+  );
+}
+
+async function refreshAgencyLiveData(options = {}) {
+  if (!currentUser || agencyLiveRefreshInProgress) return false;
+  agencyLiveRefreshInProgress = true;
+  try {
+    const ok = await refreshSessionQuietly();
+    if (!ok) return false;
+    const panel = normalizeAgencyPanel(localStorage.getItem(AGENCY_PANEL_KEY) || 'home');
+    if (options.reloadPanel && panel === 'account-manager' && !agencyUiIsBusy()) {
+      await loadAgencyAccountManager();
+    }
+    return true;
+  } catch (error) {
+    console.warn('Could not refresh live AgencyOS data', error);
+    return false;
+  } finally {
+    agencyLiveRefreshInProgress = false;
+  }
+}
+
+window.setInterval(() => {
+  if (!document.body.classList.contains('mandarin-home-active')) return;
+  if (agencyUiIsBusy()) return;
+  refreshAgencyLiveData({ reloadPanel: true });
+}, 8000);
 
 if (accessBtn) accessBtn.addEventListener('click', enterCrm);
 [usernameInput, passwordInput].forEach(input => input?.addEventListener('keydown', event => {
@@ -8642,12 +9740,11 @@ mandarinHomeScreen?.addEventListener('click', event => {
   if (accountTab) {
     const nextTab = accountTab.dataset.agencyAccountTab || 'ladies';
     if (accountTab.classList.contains('hidden') ||
-      (currentUser?.role === 'operator' && ['operators', 'salary'].includes(nextTab)) ||
-      (nextTab === 'salary' && currentUser?.role !== 'director') ||
-      (nextTab === 'translator' && !['admin', 'operator'].includes(currentUser?.role))) {
+      (currentUser?.role === 'operator' && ['operators', 'salary', 'agency-admin'].includes(nextTab)) ||
+      (['salary', 'agency-admin'].includes(nextTab) && currentUser?.role !== 'director')) {
       return;
     }
-    agencyAccountTab = ['ladies', 'operators', 'salary', 'translator'].includes(nextTab) ? nextTab : 'ladies';
+    agencyAccountTab = ['ladies', 'operators', 'salary', 'agency-admin'].includes(nextTab) ? nextTab : 'ladies';
     localStorage.setItem(AGENCY_ACCOUNT_TAB_KEY, agencyAccountTab);
     syncAgencyAccountTabs();
     renderAgencyAccountManager();
@@ -8665,7 +9762,10 @@ mandarinHomeScreen?.addEventListener('click', event => {
   }
   activateAgencyPanel(view);
 });
-agencyDashboardSearch?.addEventListener('input', renderAgencyDashboardRows);
+agencyDashboardSearch?.addEventListener('input', () => {
+  if (agencyDashboardMode === 'bonuses') renderAgencyDashboardBonuses();
+  else renderAgencyDashboardRows();
+});
 agencyDashboardYear?.addEventListener('change', () => {
   if (agencyDashboardCalendar && !agencyDashboardCalendar.classList.contains('hidden') && agencyDashboardCalendarData?.operator?.operatorId) {
     if (agencyDashboardCalendarYear) agencyDashboardCalendarYear.value = agencyDashboardYear.value;
@@ -8674,7 +9774,8 @@ agencyDashboardYear?.addEventListener('change', () => {
     return;
   }
   syncAgencyYearCombos();
-  loadAgencyDashboardOperators();
+  if (agencyDashboardMode === 'bonuses') loadAgencyDashboardBonuses();
+  else loadAgencyDashboardOperators();
 });
 agencyDashboardCalendarYear?.addEventListener('change', () => {
   if (agencyDashboardYear) agencyDashboardYear.value = agencyDashboardCalendarYear.value;
@@ -8686,6 +9787,10 @@ agencyDashboardMonths?.addEventListener('click', event => {
   if (!button) return;
   setAgencyDashboardMonth(button.dataset.month);
   if (agencyDashboardCalendar && !agencyDashboardCalendar.classList.contains('hidden')) renderAgencyDashboardCalendar();
+  else if (agencyDashboardMode === 'bonuses') {
+    if (agencyDashboardYear) agencyDashboardYear.value = String(agencyDashboardYearValue());
+    syncAgencyYearCombos();
+  }
   else loadAgencyDashboardOperators();
 });
 agencyDashboardCalendarMonths?.addEventListener('click', event => {
@@ -8710,6 +9815,17 @@ agencyDashboardCalendarGrid?.addEventListener('click', event => {
 agencyDashboardBackBtn?.addEventListener('click', () => {
   closeAgencyDashboardCalendar();
 });
+agencyDashboardStartBalanceBtn?.addEventListener('click', async () => {
+  setAgencyDashboardMode('total', { silent: true });
+  await startAgencyDashboardBalanceRefresh();
+});
+agencyDashboardBonusesBtn?.addEventListener('click', () => setAgencyDashboardMode('bonuses'));
+agencyDashboardBonusCalendarBtn?.addEventListener('click', () => {
+  const target = agencyDashboardBonusFrom || agencyDashboardBonusTo;
+  if (typeof target?.showPicker === 'function') target.showPicker();
+  else target?.focus();
+});
+agencyDashboardBonusApplyBtn?.addEventListener('click', loadAgencyDashboardBonuses);
 document.addEventListener('click', () => {
   document.querySelectorAll('.agency-year-combo-menu').forEach(item => item.classList.add('hidden'));
   document.querySelectorAll('.agency-year-combo-trigger').forEach(item => item.setAttribute('aria-expanded', 'false'));
@@ -8777,8 +9893,9 @@ agencyAccountRows?.addEventListener('click', event => {
         if (agencyAccountStatus) agencyAccountStatus.textContent = error.message || 'Could not save administrator';
       });
     } else if (field === 'profile-operator' || field === 'profile-admin') {
-      saveAgencyProfileAssignment(row).catch(error => {
+      saveAgencyProfileAssignment(row).catch(async error => {
         if (agencyAccountStatus) agencyAccountStatus.textContent = error.message || 'Could not save assignment';
+        await loadAgencyAccountManager().catch(() => {});
       });
     }
     return;
@@ -8865,8 +9982,16 @@ adminModal?.addEventListener('click', event => {
   if (event.target.classList.contains('admin-backdrop')) closeAdmin();
 });
 operatorTranslatorSaveBtn?.addEventListener('click', saveOperatorTranslatorSettings);
-agencyAccessSaveBtn?.addEventListener('click', saveAgencyAccessSettings);
-agencyAccessTestBtn?.addEventListener('click', testAgencyAccessSettings);
+agencyAccessSaveBtn?.addEventListener('click', () => saveAgencyAccessSettings('legacy'));
+agencyAccessTestBtn?.addEventListener('click', () => testAgencyAccessSettings('legacy'));
+agencyAdminSaveBtn?.addEventListener('click', () => saveAgencyAccessSettings('panel'));
+agencyAdminTestBtn?.addEventListener('click', () => testAgencyAccessSettings('panel'));
+[agencyAdminUrl, agencyAdminLogin, agencyAdminPassword].forEach(input => {
+  input?.addEventListener('input', () => {
+    agencyAdminFormEditing = true;
+    if (agencyAdminStatus) agencyAdminStatus.textContent = 'Unsaved Agency admin credentials.';
+  });
+});
 document.addEventListener('click', event => {
   const button = event.target.closest?.('#editOperatorAgencyTestBtn');
   if (!button) return;
@@ -8983,7 +10108,7 @@ saveProfileSendingBtn?.addEventListener('click', async () => {
     if (profileSendingStatus) profileSendingStatus.textContent = 'Saved.';
     adminStatus.textContent = 'Profile settings saved.';
     closeProfileSendingModal();
-    await refreshSession();
+    await refreshAgencyLiveData({ reloadPanel: false });
     await loadAdmin();
     if (document.body.classList.contains('mandarin-home-active')) await loadAgencyAccountManager();
   } catch (error) {
@@ -9080,6 +10205,7 @@ confirmDeleteProfileBtn?.addEventListener('click', async () => {
     await deletePendingProfile();
   } catch (error) {
     adminStatus.textContent = error.message;
+    alert(error.message || 'Could not delete profile');
   } finally {
     confirmDeleteProfileBtn.disabled = false;
     confirmDeleteProfileBtn.textContent = 'YES';
@@ -9239,6 +10365,7 @@ operatorsList?.addEventListener('click', async event => {
 
 (async function boot() {
   if (await refreshSession()) {
+    if (document.body.classList.contains('mandarin-home-active')) return;
     if (activeProfileId && ladyConnected) {
       await loadMen();
     }
@@ -9249,16 +10376,555 @@ operatorsList?.addEventListener('click', async event => {
   showLogin(status.needsSetup);
 })();
 
+function installAgencyDashboardCompactStyles() {
+  document.getElementById('agencyDashboardCompactStyles')?.remove();
+  const style = document.createElement('style');
+  style.id = 'agencyDashboardCompactStyles';
+  style.dataset.agencyDashboardCompact = 'true';
+  style.textContent = `
+    body.mandarin-home-active.agency-dashboard-active .agency-dashboard-panel {
+      padding:10px 24px!important;
+    }
+    body.mandarin-home-active.agency-dashboard-active .agency-dashboard-toolbar,
+    body.mandarin-home-active.agency-shell-collapsed.agency-dashboard-active .agency-dashboard-toolbar {
+      height:32px!important;
+      min-height:32px!important;
+      width:min(1220px,calc(100vw - 330px))!important;
+      grid-template-columns:max-content max-content minmax(560px,1fr)!important;
+      gap:6px!important;
+      margin:0 auto 16px!important;
+      max-width:1220px!important;
+    }
+    body.mandarin-home-active.agency-shell-collapsed.agency-dashboard-active .agency-dashboard-toolbar {
+      width:min(1220px,calc(100vw - 210px))!important;
+    }
+    body.mandarin-home-active.agency-dashboard-active .agency-dashboard-year {
+      width:82px!important;
+      height:28px!important;
+      min-height:28px!important;
+      padding:0 9px!important;
+      border-radius:5px!important;
+      font-size:11px!important;
+      font-weight:600!important;
+    }
+    body.mandarin-home-active.agency-dashboard-active .agency-dashboard-actions {
+      height:28px!important;
+      min-height:28px!important;
+      display:flex!important;
+      gap:6px!important;
+    }
+    body.mandarin-home-active.agency-dashboard-active .agency-dashboard-action-btn {
+      width:auto!important;
+      min-width:74px!important;
+      height:28px!important;
+      min-height:28px!important;
+      padding:0 9px!important;
+      border-radius:5px!important;
+      font-size:9.5px!important;
+      font-weight:650!important;
+      white-space:nowrap!important;
+      overflow:hidden!important;
+      text-overflow:ellipsis!important;
+    }
+    body.mandarin-home-active.agency-dashboard-active .agency-dashboard-months {
+      height:30px!important;
+      min-height:30px!important;
+      padding:3px!important;
+      gap:2px!important;
+      border-radius:5px!important;
+      grid-template-columns:repeat(12,minmax(36px,1fr))!important;
+    }
+    body.mandarin-home-active.agency-dashboard-active .agency-dashboard-month {
+      height:22px!important;
+      min-height:22px!important;
+      border-radius:4px!important;
+      font-size:10.5px!important;
+      font-weight:650!important;
+    }
+    body.mandarin-home-active.agency-dashboard-active .agency-dashboard-list,
+    body.mandarin-home-active.agency-dashboard-active .agency-dashboard-bonuses {
+      max-height:calc(100vh - 96px)!important;
+      width:min(1050px,calc(100vw - 330px))!important;
+      max-width:1050px!important;
+      margin:0 auto!important;
+      border:1px solid #eadbd4!important;
+      border-radius:10px!important;
+      background:#fffaf7!important;
+      box-shadow:0 1px 0 rgba(255,255,255,.75) inset!important;
+      overflow:visible!important;
+    }
+    body.mandarin-home-active.agency-dashboard-active .agency-dashboard-list {
+      overflow:hidden!important;
+    }
+    body.mandarin-home-active.agency-dashboard-active .agency-dashboard-bonuses {
+      overflow:hidden!important;
+      background:#fffaf7!important;
+    }
+    body.mandarin-home-active.agency-shell-collapsed.agency-dashboard-active .agency-dashboard-list,
+    body.mandarin-home-active.agency-shell-collapsed.agency-dashboard-active .agency-dashboard-bonuses {
+      width:min(1050px,calc(100vw - 210px))!important;
+    }
+    body.mandarin-home-active.agency-dashboard-active .agency-dashboard-table {
+      width:100%!important;
+      min-width:0!important;
+      table-layout:fixed!important;
+      border:0!important;
+      border-radius:0!important;
+      clip-path:none!important;
+      overflow:visible!important;
+      font-size:11px!important;
+      background:#fffaf7!important;
+    }
+    body.mandarin-home-active.agency-dashboard-active .agency-dashboard-table th {
+      height:30px!important;
+      padding:0 8px!important;
+      background:#f1e5df!important;
+      border-right:1px solid #eadbd4!important;
+      border-bottom:1px solid #e3d3cc!important;
+      border-top:0!important;
+      border-right-width:1px!important;
+      border-bottom-width:1px!important;
+      color:#241f1b!important;
+      font-size:10.5px!important;
+      font-weight:750!important;
+      vertical-align:middle!important;
+      line-height:1.1!important;
+    }
+    body.mandarin-home-active.agency-dashboard-active .agency-dashboard-table td {
+      height:42px!important;
+      padding:0 8px!important;
+      background:#fffaf7!important;
+      border-right:1px solid #eadbd4!important;
+      border-bottom:1px solid #eadbd4!important;
+      border-top:0!important;
+      border-right-width:1px!important;
+      border-bottom-width:1px!important;
+      color:#241f1b!important;
+      font-size:11px!important;
+      font-weight:550!important;
+      white-space:nowrap!important;
+      overflow:hidden!important;
+      text-overflow:ellipsis!important;
+      vertical-align:middle!important;
+      line-height:1.1!important;
+    }
+    body.mandarin-home-active.agency-dashboard-active .agency-dashboard-table th:last-child,
+    body.mandarin-home-active.agency-dashboard-active .agency-dashboard-table td:last-child {
+      border-right:0!important;
+    }
+    body.mandarin-home-active.agency-dashboard-active .agency-dashboard-table thead th {
+      border-top:0!important;
+      box-shadow:none!important;
+    }
+    body.mandarin-home-active.agency-dashboard-active .agency-dashboard-table thead tr,
+    body.mandarin-home-active.agency-dashboard-active .agency-dashboard-table tbody tr {
+      box-shadow:none!important;
+      border:0!important;
+    }
+    body.mandarin-home-active.agency-dashboard-active .agency-dashboard-table tbody tr:last-child td {
+      border-bottom:0!important;
+    }
+    body.mandarin-home-active.agency-dashboard-active .agency-dashboard-table th:first-child,
+    body.mandarin-home-active.agency-dashboard-active .agency-dashboard-table th:last-child,
+    body.mandarin-home-active.agency-dashboard-active .agency-dashboard-table tbody tr:last-child td:first-child,
+    body.mandarin-home-active.agency-dashboard-active .agency-dashboard-table tbody tr:last-child td:last-child {
+      border-radius:0!important;
+    }
+    body.mandarin-home-active.agency-dashboard-active .agency-dashboard-table th:nth-child(1),
+    body.mandarin-home-active.agency-dashboard-active .agency-dashboard-table td:nth-child(1) { width:5%!important; }
+    body.mandarin-home-active.agency-dashboard-active .agency-dashboard-table th:nth-child(2),
+    body.mandarin-home-active.agency-dashboard-active .agency-dashboard-table td:nth-child(2) { width:17%!important; }
+    body.mandarin-home-active.agency-dashboard-active .agency-dashboard-table th:nth-child(3),
+    body.mandarin-home-active.agency-dashboard-active .agency-dashboard-table td:nth-child(3) { width:16%!important; }
+    body.mandarin-home-active.agency-dashboard-active .agency-dashboard-table th:nth-child(4),
+    body.mandarin-home-active.agency-dashboard-active .agency-dashboard-table td:nth-child(4) { width:16%!important; }
+    body.mandarin-home-active.agency-dashboard-active .agency-dashboard-table th:nth-child(5),
+    body.mandarin-home-active.agency-dashboard-active .agency-dashboard-table td:nth-child(5) { width:6%!important; }
+    body.mandarin-home-active.agency-dashboard-active .agency-dashboard-table th:nth-child(6),
+    body.mandarin-home-active.agency-dashboard-active .agency-dashboard-table td:nth-child(6) { width:10%!important; }
+    body.mandarin-home-active.agency-dashboard-active .agency-dashboard-table th:nth-child(7),
+    body.mandarin-home-active.agency-dashboard-active .agency-dashboard-table td:nth-child(7) { width:9%!important; }
+    body.mandarin-home-active.agency-dashboard-active .agency-dashboard-table th:nth-child(8),
+    body.mandarin-home-active.agency-dashboard-active .agency-dashboard-table td:nth-child(8) { width:9%!important; }
+    body.mandarin-home-active.agency-dashboard-active .agency-dashboard-table th:nth-child(9),
+    body.mandarin-home-active.agency-dashboard-active .agency-dashboard-table td:nth-child(9) { width:12%!important; }
+    body.mandarin-home-active.agency-dashboard-active .agency-dashboard-badge {
+      min-width:0!important;
+      height:auto!important;
+      min-height:0!important;
+      padding:0!important;
+      border-radius:0!important;
+      background:transparent!important;
+      font-size:10px!important;
+      font-weight:650!important;
+    }
+    body.mandarin-home-active.agency-dashboard-active .agency-dashboard-table b {
+      min-width:58px!important;
+      min-height:22px!important;
+      height:22px!important;
+      display:inline-flex!important;
+      align-items:center!important;
+      justify-content:center!important;
+      padding:0 8px!important;
+      border-radius:5px!important;
+      font-size:11px!important;
+      font-weight:650!important;
+      line-height:1!important;
+      vertical-align:middle!important;
+    }
+    body.mandarin-home-active.agency-dashboard-active .agency-dashboard-summary {
+      width:min(1050px,calc(100vw - 330px))!important;
+      max-width:1050px!important;
+      min-height:34px!important;
+      display:flex!important;
+      align-items:center!important;
+      justify-content:flex-end!important;
+      gap:8px!important;
+      margin:8px auto 0!important;
+      padding:6px 10px!important;
+      border:1px solid #eadbd4!important;
+      border-radius:8px!important;
+      background:#fffaf7!important;
+      box-shadow:0 1px 0 rgba(255,255,255,.75) inset!important;
+      box-sizing:border-box!important;
+      color:#6f5f57!important;
+      font-size:10px!important;
+      font-weight:650!important;
+    }
+    body.mandarin-home-active.agency-shell-collapsed.agency-dashboard-active .agency-dashboard-summary {
+      width:min(1050px,calc(100vw - 210px))!important;
+    }
+    body.mandarin-home-active.agency-dashboard-active .agency-dashboard-summary.hidden {
+      display:none!important;
+    }
+    body.mandarin-home-active.agency-dashboard-active .agency-dashboard-summary b {
+      min-width:64px!important;
+      height:22px!important;
+      display:inline-flex!important;
+      align-items:center!important;
+      justify-content:center!important;
+      padding:0 8px!important;
+      border-radius:5px!important;
+      background:#eadbd4!important;
+      color:#984a34!important;
+      font-size:11px!important;
+      font-weight:700!important;
+      line-height:1!important;
+    }
+    body.mandarin-home-active.agency-dashboard-active .agency-dashboard-bonus-filters {
+      min-height:48px!important;
+      padding:9px 10px!important;
+      gap:8px!important;
+      grid-template-columns:32px 142px 142px 190px 72px minmax(230px,1fr)!important;
+      border:0!important;
+      border-bottom:1px solid #eadbd4!important;
+      border-radius:0!important;
+      background:#fffaf7!important;
+      box-shadow:0 1px 0 rgba(255,255,255,.75) inset!important;
+    }
+    body.mandarin-home-active.agency-dashboard-active .agency-dashboard-calendar-chip,
+    body.mandarin-home-active.agency-dashboard-active .agency-dashboard-bonus-filters input,
+    body.mandarin-home-active.agency-dashboard-active .agency-dashboard-bonus-filters select,
+    body.mandarin-home-active.agency-dashboard-active .agency-dashboard-bonus-apply {
+      height:28px!important;
+      min-height:28px!important;
+      border-radius:5px!important;
+      font-size:10px!important;
+      font-weight:550!important;
+    }
+    body.mandarin-home-active.agency-dashboard-active .agency-dashboard-bonus-filters label {
+      gap:5px!important;
+      font-size:9px!important;
+      font-weight:550!important;
+    }
+    body.mandarin-home-active.agency-dashboard-active .agency-dashboard-bonus-total {
+      height:28px!important;
+      min-height:28px!important;
+      padding:0 8px!important;
+      border-radius:5px!important;
+      gap:6px!important;
+      justify-self:end!important;
+      min-width:300px!important;
+      border-color:#eadbd4!important;
+      background:#fff7f2!important;
+    }
+    body.mandarin-home-active.agency-dashboard-active .agency-dashboard-bonus-total span {
+      font-size:9px!important;
+      font-weight:550!important;
+    }
+    body.mandarin-home-active.agency-dashboard-active .agency-dashboard-bonus-total strong {
+      min-width:40px!important;
+      height:20px!important;
+      min-height:20px!important;
+      padding:0 6px!important;
+      border-radius:4px!important;
+      font-size:10px!important;
+      font-weight:650!important;
+    }
+    body.mandarin-home-active.agency-dashboard-active .agency-dashboard-empty {
+      padding:14px!important;
+      font-size:11px!important;
+      font-weight:550!important;
+    }
+    body.mandarin-home-active.agency-dashboard-active .agency-dashboard-list,
+    body.mandarin-home-active.agency-dashboard-active .agency-dashboard-bonuses {
+      border:1px solid #e7d7cf!important;
+      border-radius:9px!important;
+      background:#fffaf7!important;
+      box-shadow:none!important;
+      clip-path:none!important;
+      overflow:hidden!important;
+    }
+    body.mandarin-home-active.agency-dashboard-active .agency-dashboard-table {
+      width:100%!important;
+      border:0!important;
+      border-collapse:separate!important;
+      border-spacing:0!important;
+      border-radius:0!important;
+      clip-path:none!important;
+      overflow:visible!important;
+      background:#fffaf7!important;
+      box-shadow:none!important;
+      outline:0!important;
+    }
+    body.mandarin-home-active.agency-dashboard-active .agency-dashboard-table thead,
+    body.mandarin-home-active.agency-dashboard-active .agency-dashboard-table tbody,
+    body.mandarin-home-active.agency-dashboard-active .agency-dashboard-table tr {
+      border:0!important;
+      box-shadow:none!important;
+      outline:0!important;
+    }
+    body.mandarin-home-active.agency-dashboard-active .agency-dashboard-table th,
+    body.mandarin-home-active.agency-dashboard-active .agency-dashboard-table td {
+      border-top:0!important;
+      border-left:0!important;
+      border-right:1px solid #eadbd4!important;
+      border-bottom:1px solid #eadbd4!important;
+      box-shadow:none!important;
+      outline:0!important;
+      vertical-align:middle!important;
+    }
+    body.mandarin-home-active.agency-dashboard-active .agency-dashboard-table th {
+      height:29px!important;
+      background:#f0e4de!important;
+      border-bottom-color:#ddcbc2!important;
+    }
+    body.mandarin-home-active.agency-dashboard-active .agency-dashboard-table td {
+      height:40px!important;
+    }
+    body.mandarin-home-active.agency-dashboard-active .agency-dashboard-table th:last-child,
+    body.mandarin-home-active.agency-dashboard-active .agency-dashboard-table td:last-child {
+      border-right:0!important;
+    }
+    body.mandarin-home-active.agency-dashboard-active .agency-dashboard-table tbody tr:last-child td {
+      border-bottom:0!important;
+    }
+    body.mandarin-home-active.agency-dashboard-active .agency-dashboard-table th:first-child,
+    body.mandarin-home-active.agency-dashboard-active .agency-dashboard-table th:last-child,
+    body.mandarin-home-active.agency-dashboard-active .agency-dashboard-table td:first-child,
+    body.mandarin-home-active.agency-dashboard-active .agency-dashboard-table td:last-child {
+      border-radius:0!important;
+    }
+    body.mandarin-home-active.agency-dashboard-active .agency-dashboard-table b,
+    body.mandarin-home-active.agency-dashboard-active .agency-dashboard-summary b,
+    body.mandarin-home-active.agency-dashboard-active .agency-dashboard-bonus-total b,
+    body.mandarin-home-active.agency-dashboard-active .agency-dashboard-bonus-total strong {
+      min-width:48px!important;
+      height:19px!important;
+      min-height:19px!important;
+      padding:0 7px!important;
+      border-radius:5px!important;
+      display:inline-flex!important;
+      align-items:center!important;
+      justify-content:center!important;
+      background:#eadbd4!important;
+      color:#984a34!important;
+      font-size:10px!important;
+      font-weight:700!important;
+      line-height:1!important;
+      box-sizing:border-box!important;
+    }
+    body.mandarin-home-active.agency-dashboard-active .agency-dashboard-summary {
+      min-height:31px!important;
+      padding:5px 9px!important;
+      border:1px solid #e7d7cf!important;
+      border-radius:7px!important;
+      gap:7px!important;
+      font-size:10px!important;
+      box-shadow:none!important;
+    }
+    body.mandarin-home-active.agency-dashboard-active .agency-dashboard-bonus-filters {
+      min-height:46px!important;
+      padding:8px 10px!important;
+      grid-template-columns:36px 154px 154px 190px 70px minmax(238px,1fr)!important;
+      gap:8px!important;
+      border-bottom:1px solid #eadbd4!important;
+      background:#fffaf7!important;
+      box-shadow:none!important;
+      overflow:hidden!important;
+    }
+    body.mandarin-home-active.agency-dashboard-active .agency-dashboard-calendar-chip {
+      width:28px!important;
+      height:28px!important;
+      min-width:28px!important;
+      min-height:28px!important;
+      justify-self:start!important;
+    }
+    body.mandarin-home-active.agency-dashboard-active .agency-dashboard-calendar-chip svg {
+      width:15px!important;
+      height:15px!important;
+    }
+    body.mandarin-home-active.agency-dashboard-active .agency-dashboard-bonus-filters label {
+      grid-template-columns:32px minmax(0,1fr)!important;
+      gap:6px!important;
+      font-size:9px!important;
+      min-width:0!important;
+    }
+    body.mandarin-home-active.agency-dashboard-active .agency-dashboard-bonus-filters input,
+    body.mandarin-home-active.agency-dashboard-active .agency-dashboard-bonus-filters select,
+    body.mandarin-home-active.agency-dashboard-active .agency-dashboard-bonus-apply {
+      height:28px!important;
+      min-height:28px!important;
+      border-radius:5px!important;
+      font-size:10px!important;
+    }
+    body.mandarin-home-active.agency-dashboard-active .agency-dashboard-bonus-total {
+      min-width:260px!important;
+      height:28px!important;
+      min-height:28px!important;
+      padding:0 7px!important;
+      gap:5px!important;
+      border:1px solid #eadbd4!important;
+      border-radius:6px!important;
+      background:#fff7f2!important;
+      box-shadow:none!important;
+      justify-self:end!important;
+    }
+    body.mandarin-home-active.agency-dashboard-active .agency-dashboard-bonus-total span {
+      font-size:9px!important;
+      font-weight:650!important;
+      white-space:nowrap!important;
+    }
+    body.mandarin-home-active.agency-dashboard-active .agency-dashboard-toolbar,
+    body.mandarin-home-active.agency-dashboard-active .agency-dashboard-status,
+    body.mandarin-home-active.agency-dashboard-active .agency-dashboard-list,
+    body.mandarin-home-active.agency-dashboard-active .agency-dashboard-bonuses,
+    body.mandarin-home-active.agency-dashboard-active .agency-dashboard-summary {
+      width:min(1260px,calc(100vw - 360px))!important;
+      max-width:1260px!important;
+      margin-left:auto!important;
+      margin-right:auto!important;
+      box-sizing:border-box!important;
+    }
+    body.mandarin-home-active.agency-shell-collapsed.agency-dashboard-active .agency-dashboard-toolbar,
+    body.mandarin-home-active.agency-shell-collapsed.agency-dashboard-active .agency-dashboard-status,
+    body.mandarin-home-active.agency-shell-collapsed.agency-dashboard-active .agency-dashboard-list,
+    body.mandarin-home-active.agency-shell-collapsed.agency-dashboard-active .agency-dashboard-bonuses,
+    body.mandarin-home-active.agency-shell-collapsed.agency-dashboard-active .agency-dashboard-summary {
+      width:min(1260px,calc(100vw - 240px))!important;
+    }
+    body.mandarin-home-active.agency-dashboard-active .agency-dashboard-toolbar,
+    body.mandarin-home-active.agency-shell-collapsed.agency-dashboard-active .agency-dashboard-toolbar {
+      grid-template-columns:max-content max-content minmax(0,1fr)!important;
+      margin-top:10px!important;
+      margin-bottom:8px!important;
+    }
+    body.mandarin-home-active.agency-dashboard-active .agency-dashboard-status {
+      min-height:18px!important;
+      height:18px!important;
+      margin-top:0!important;
+      margin-bottom:8px!important;
+      padding:0 2px!important;
+      color:#8f8076!important;
+      font-size:11px!important;
+      font-weight:500!important;
+      line-height:18px!important;
+      text-align:left!important;
+      overflow:hidden!important;
+    }
+    body.mandarin-home-active.agency-dashboard-active .agency-dashboard-status:empty {
+      display:none!important;
+    }
+    body.mandarin-home-active.agency-dashboard-active .agency-dashboard-bonuses,
+    body.mandarin-home-active.agency-dashboard-active .agency-dashboard-list {
+      margin-top:0!important;
+    }
+    body.mandarin-home-active.agency-dashboard-active .agency-dashboard-year {
+      width:84px!important;
+      height:30px!important;
+      min-height:30px!important;
+      padding:0 24px 0 13px!important;
+      border-radius:7px!important;
+      line-height:30px!important;
+      text-align:left!important;
+      appearance:none!important;
+      -webkit-appearance:none!important;
+      background-image:linear-gradient(45deg,transparent 50%,#9b8b82 50%),linear-gradient(135deg,#9b8b82 50%,transparent 50%)!important;
+      background-position:calc(100% - 17px) 13px,calc(100% - 12px) 13px!important;
+      background-size:5px 5px,5px 5px!important;
+      background-repeat:no-repeat!important;
+    }
+    body.mandarin-home-active.agency-dashboard-active .agency-dashboard-year::-ms-expand {
+      display:none!important;
+    }
+    body.mandarin-home-active.app-dark-theme.agency-dashboard-active .agency-dashboard-list,
+    body.mandarin-home-active.app-dark-theme.agency-dashboard-active .agency-dashboard-bonuses,
+    body.mandarin-home-active.app-dark-theme.agency-dashboard-active .agency-dashboard-summary {
+      border-color:#3a312a!important;
+      background:#171411!important;
+      color:#f5eee9!important;
+    }
+    body.mandarin-home-active.app-dark-theme.agency-dashboard-active .agency-dashboard-table {
+      background:#171411!important;
+      color:#f5eee9!important;
+    }
+    body.mandarin-home-active.app-dark-theme.agency-dashboard-active .agency-dashboard-table th {
+      background:#201c19!important;
+      color:#f5eee9!important;
+      border-right-color:#332922!important;
+      border-bottom-color:#3a312a!important;
+    }
+    body.mandarin-home-active.app-dark-theme.agency-dashboard-active .agency-dashboard-table td {
+      background:#171411!important;
+      color:#f5eee9!important;
+      border-right-color:#332922!important;
+      border-bottom-color:#332922!important;
+    }
+    body.mandarin-home-active.app-dark-theme.agency-dashboard-active .agency-dashboard-badge {
+      color:#f2d1c5!important;
+    }
+    body.mandarin-home-active.app-dark-theme.agency-dashboard-active .agency-dashboard-table b,
+    body.mandarin-home-active.app-dark-theme.agency-dashboard-active .agency-dashboard-summary b,
+    body.mandarin-home-active.app-dark-theme.agency-dashboard-active .agency-dashboard-bonus-total b,
+    body.mandarin-home-active.app-dark-theme.agency-dashboard-active .agency-dashboard-bonus-total strong {
+      background:#2d261f!important;
+      color:#f1a58c!important;
+    }
+    body.mandarin-home-active.app-dark-theme.agency-dashboard-active .agency-dashboard-summary,
+    body.mandarin-home-active.app-dark-theme.agency-dashboard-active .agency-dashboard-bonus-total {
+      background:#171411!important;
+      border-color:#3a312a!important;
+      color:#b9aaa0!important;
+    }
+    body.mandarin-home-active.app-dark-theme.agency-dashboard-active .agency-dashboard-bonus-filters {
+      background:#171411!important;
+      border-bottom-color:#3a312a!important;
+      color:#f5eee9!important;
+    }
+    body.mandarin-home-active.app-dark-theme.agency-dashboard-active .agency-dashboard-calendar-chip,
+    body.mandarin-home-active.app-dark-theme.agency-dashboard-active .agency-dashboard-bonus-filters input,
+    body.mandarin-home-active.app-dark-theme.agency-dashboard-active .agency-dashboard-bonus-filters select,
+    body.mandarin-home-active.app-dark-theme.agency-dashboard-active .agency-dashboard-bonus-apply {
+      border-color:#3a312a!important;
+      background:#1b1816!important;
+      color:#f5eee9!important;
+    }
+  `;
+  document.head.appendChild(style);
+}
 
-
-
-
-
-
-
-
-
-
-
+installAgencyDashboardCompactStyles();
+setTimeout(installAgencyDashboardCompactStyles, 0);
+setTimeout(installAgencyDashboardCompactStyles, 500);
 
 
