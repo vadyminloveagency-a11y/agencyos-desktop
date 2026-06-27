@@ -1631,12 +1631,20 @@ const openAddProfileModalBtn = document.getElementById('openAddProfileModalBtn')
 const addProfileModal = document.getElementById('addProfileModal');
 
 function reloadWorkspaceEmbed(reason = 'refresh') {
+  const shouldAutoloadInbox = [
+    'connect',
+    'sidebar-profile',
+    'sidebar-profile-power',
+    'profile-select',
+    'connect-all',
+    'agency-inbox'
+  ].includes(String(reason || ''));
   [workspaceEmbedFrame, agencyInboxFrame].forEach(frame => {
     if (!frame) return;
     const currentSrc = frame.getAttribute('src') || 'workspace.html?embedded=1';
     const url = new URL(currentSrc, window.location.href);
     url.searchParams.set('embedded', '1');
-    url.searchParams.set('autoloadInbox', reason === 'connect' ? '1' : '0');
+    url.searchParams.set('autoloadInbox', shouldAutoloadInbox ? '1' : '0');
     url.searchParams.set('v', `20260625-agency-inbox-${reason}-${Date.now()}`);
     frame.src = `${url.pathname.split('/').pop()}?${url.searchParams.toString()}`;
   });

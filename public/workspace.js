@@ -3934,7 +3934,12 @@ async function openWorkspaceInbox(button = inboxFilterBtn, options = {}) {
 }
 
 async function ensureWorkspaceInboxAfterConnect(options = {}) {
-  if (!activeProfileId || !isWorkspaceLadyConnected() || workspaceListFilter !== 'inbox') return;
+  if (!activeProfileId || !isWorkspaceLadyConnected()) return;
+  if (options.force === true && workspaceListFilter !== 'inbox') {
+    workspaceListFilter = 'inbox';
+    persistWorkspaceListFilter();
+  }
+  if (workspaceListFilter !== 'inbox') return;
   const attempts = Math.max(1, Number(options.attempts || 3) || 3);
   const beforeLetters = [...workspaceLetters];
   workspaceInboxListLoading = true;
@@ -4010,7 +4015,9 @@ async function loadWorkspace() {
     const result = await apiFetch('/api/workspace/inbox');
     workspaceLetters = result.letters || [];
     renderList();
-    if (workspaceListFilter === 'inbox') await ensureWorkspaceInboxAfterConnect();
+    if (workspaceListFilter === 'inbox' || workspaceAutoloadInbox || !workspaceLetters.length) {
+      await ensureWorkspaceInboxAfterConnect({ force: workspaceAutoloadInbox || !workspaceLetters.length });
+    }
     startWorkspaceInboxBackgroundScan();
     const group = findGroup(workspaceSelectedId);
     if (group) {
