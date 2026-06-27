@@ -3402,6 +3402,7 @@ function renderAttachments(attachments = []) {
     .map(item => ({
       type: String(item?.type || '').toLowerCase(),
       url: String(item?.localUrl || item?.url || item?.src || '').trim(),
+      sourceUrl: String(item?.sourceUrl || '').trim(),
       label: String(item?.label || '').trim()
     }))
     .filter(item => item.url)
@@ -3432,9 +3433,12 @@ function renderAttachments(attachments = []) {
           const isVideo = item.kind === 'video';
           const label = item.label || (item.kind === 'video' ? 'Video' : (item.kind === 'photo' ? 'Photo' : 'File'));
           const directVideo = isVideo && /\.(?:mp4|webm|mov|m4v)(?:[?#]|$)/i.test(item.url);
+          const fallbackAttr = item.sourceUrl && item.sourceUrl !== item.url
+            ? ` data-fallback-src="${escapeAttr(item.sourceUrl)}"`
+            : '';
           return directVideo
             ? `<figure class="workspace-attachment-preview video">
-                <video src="${escapeAttr(item.url)}" controls preload="metadata"></video>
+                <video src="${escapeAttr(item.url)}"${fallbackAttr} controls preload="metadata"></video>
                 <figcaption>${escapeHtml(label)}</figcaption>
               </figure>`
             : isVideo
@@ -3443,7 +3447,7 @@ function renderAttachments(attachments = []) {
                   <figcaption>${escapeHtml(label)}</figcaption>
                 </figure>`
             : `<figure class="workspace-attachment-preview image">
-                <img src="${escapeAttr(item.url)}" alt="${escapeAttr(label)}" loading="lazy" decoding="async">
+                <img src="${escapeAttr(item.url)}"${fallbackAttr} alt="${escapeAttr(label)}" loading="lazy" decoding="async">
                 <figcaption>${escapeHtml(label)}</figcaption>
               </figure>`;
         }).join('')}
@@ -4817,6 +4821,16 @@ dialog.addEventListener('click', event => {
     selectLetterGroup(workspaceSelectedId, button.dataset.letterKey);
   }
 });
+
+dialog.addEventListener('error', event => {
+  const target = event.target;
+  if (!(target instanceof HTMLImageElement) && !(target instanceof HTMLVideoElement)) return;
+  if (!target.closest?.('.workspace-attachment-preview')) return;
+  const fallbackSrc = String(target.dataset?.fallbackSrc || '').trim();
+  if (!fallbackSrc || target.dataset.fallbackTried === 'true') return;
+  target.dataset.fallbackTried = 'true';
+  target.src = fallbackSrc;
+}, true);
 
 dialog.addEventListener('dblclick', event => {
   const historyCard = event.target.closest('[data-history-url]');
