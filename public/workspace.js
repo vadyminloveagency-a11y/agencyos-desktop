@@ -1918,8 +1918,11 @@ function renderHistoryLettersPanel(group) {
           const mediaBadge = hasMedia
             ? `<span class="workspace-history-media-badge ${escapeAttr(mediaKind)}" data-history-media-kind="${escapeAttr(mediaKind)}" data-history-media-id="${escapeAttr(mediaId)}" data-history-media-hash="${escapeAttr(mediaHash || '')}" aria-label="${escapeAttr(mediaLabel)}"></span>`
             : '';
+          const liveState = entry.liveLoading
+            ? '<span class="workspace-history-live-state loading">opening</span>'
+            : (entry.liveLetter?.realLetter ? '<span class="workspace-history-live-state loaded">live</span>' : '');
           return `
-            <button class="workspace-letter-card workspace-history-card ${direction} ${active ? 'active' : ''} ${entry.readByMan ? 'read-by-man' : ''}" type="button" data-history-key="${escapeAttr(entry.key)}" ${entry.historyUrl ? `data-history-url="${escapeAttr(entry.historyUrl)}" title="Open this Dream letter"` : ''}>
+            <button class="workspace-letter-card workspace-history-card ${direction} ${active ? 'active' : ''} ${entry.liveLoading ? 'live-loading' : ''} ${entry.liveLetter?.realLetter ? 'live-loaded' : ''} ${entry.readByMan ? 'read-by-man' : ''}" type="button" data-history-key="${escapeAttr(entry.key)}" ${entry.historyUrl ? `data-history-url="${escapeAttr(entry.historyUrl)}" title="Open this Dream letter"` : ''}>
               <span class="workspace-history-card-main">
                 <span class="workspace-history-media-slot" aria-hidden="${mediaBadge ? 'false' : 'true'}">
                   ${mediaBadge ? `<span class="workspace-history-media">${mediaBadge}</span>` : ''}
@@ -1929,6 +1932,7 @@ function renderHistoryLettersPanel(group) {
                 </span>
               </span>
               <span class="workspace-history-card-status">
+                ${liveState}
                 ${entry.readByMan ? '<span class="workspace-history-read-inline">read</span>' : ''}
               </span>
             </button>
@@ -2733,7 +2737,10 @@ function renderHistoryEntry(entry, group) {
     `;
   }
   if (entry.liveLetter) {
-    return renderConversation({
+    const liveBanner = entry.liveLoading
+      ? '<div class="workspace-live-load-banner"><span class="workspace-live-spinner" aria-hidden="true"></span><strong>Opening letter...</strong><span>Loading latest letter data</span></div>'
+      : '<div class="workspace-live-load-banner loaded"><strong>Loaded from Dream</strong><span>Real letter data is shown</span></div>';
+    return `${liveBanner}${renderConversation({
       ...entry.liveLetter,
       key: entry.key,
       direction: entry.direction,
@@ -2745,7 +2752,7 @@ function renderHistoryEntry(entry, group) {
         dateText: entry.dateText || '',
         text: entry.text || ''
       }]
-    }, group?.name || '', group?.photoUrl || '');
+    }, group?.name || '', group?.photoUrl || '')}`;
   }
   const myName = myProfileName();
   const author = entry.author || group?.name || 'Message';
@@ -2768,7 +2775,7 @@ function renderHistoryEntry(entry, group) {
           <p>${escapeHtml(entry.text || '')}</p>
           ${translationLoading ? '<div class="workspace-translation-result loading">Translating...</div>' : ''}
           ${translationText ? `<div class="workspace-translation-result">${escapeHtml(translationText)}</div>` : ''}
-          ${entry.liveLoading ? '<div class="workspace-translation-result loading">Loading Dream letter...</div>' : ''}
+          ${entry.liveLoading ? '<div class="workspace-live-load-banner"><span class="workspace-live-spinner" aria-hidden="true"></span><strong>Opening letter...</strong><span>Loading latest letter data</span></div>' : ''}
           ${entry.liveError ? `<div class="workspace-translation-result">${escapeHtml(entry.liveError)}</div>` : ''}
         </article>
       </div>
