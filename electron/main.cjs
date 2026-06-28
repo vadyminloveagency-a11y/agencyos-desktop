@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Menu, ipcMain, session, shell } = require('electron');
+const { app, BrowserWindow, Menu, ipcMain, session, shell, globalShortcut } = require('electron');
 const { autoUpdater } = require('electron-updater');
 const fs = require('fs');
 const path = require('path');
@@ -18,6 +18,7 @@ let dreamLogoutBeforeQuitDone = false;
 let dreamLogoutBeforeQuitInProgress = false;
 let autoUpdaterConfigured = false;
 let updateInstallInProgress = false;
+let devToolsShortcutsRegistered = false;
 const DEFAULT_REMOTE_SERVER_URL = 'https://agencyos-server-096a.onrender.com';
 
 function dreamPreparedProfilesPath() {
@@ -169,6 +170,27 @@ function enableDevToolsShortcuts(win, label = 'window') {
       logElectronInfo('devtools-open', label);
     }
   });
+}
+
+function toggleMainDevTools(label = 'global') {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  if (mainWindow.webContents.isDevToolsOpened()) {
+    mainWindow.webContents.closeDevTools();
+    logElectronInfo('devtools-close', label);
+  } else {
+    mainWindow.webContents.openDevTools({ mode: 'detach' });
+    logElectronInfo('devtools-open', label);
+  }
+}
+
+function registerDevToolsGlobalShortcuts() {
+  if (devToolsShortcutsRegistered) return;
+  const shortcuts = ['F12', 'CommandOrControl+Shift+I'];
+  for (const accelerator of shortcuts) {
+    const ok = globalShortcut.register(accelerator, () => toggleMainDevTools(accelerator));
+    logElectronInfo('devtools-shortcut-register', `${accelerator}=${ok ? 'ok' : 'failed'}`);
+  }
+  devToolsShortcutsRegistered = true;
 }
 
 function dreamPartitionForProfile(profileId) {
@@ -810,6 +832,7 @@ ipcMain.handle('agency:logout-dream-profile', async (_event, payload = {}) => {
 app.whenReady().then(async () => {
   try {
     Menu.setApplicationMenu(null);
+    registerDevToolsGlobalShortcuts();
     mainBaseUrl = await resolveMainBaseUrl();
     createMainWindow(mainBaseUrl);
   } catch (error) {
@@ -840,6 +863,10 @@ app.on('before-quit', event => {
 app.on('window-all-closed', () => {
   logElectronInfo('window-all-closed', `main=${Boolean(mainWindow)} dream=${dreamWindows.size} hidden=${hiddenWindows.size}`);
   app.quit();
+});
+
+app.on('will-quit', () => {
+  globalShortcut.unregisterAll();
 });
 
 app.on('activate', () => {
