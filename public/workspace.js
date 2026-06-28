@@ -3439,6 +3439,11 @@ async function loadWorkspaceHistoryIntoPanel(group, options = {}) {
   const cachedHistory = readWorkspaceHistoryCache(targetGroup);
   if (!options.force && cachedHistory) return cachedHistory;
   if (workspaceHistoryLoadingIds.has(key)) return cachedHistory || null;
+  const rowSyncId = options.rowIndicator === true ? String(targetGroup.id || key || '') : '';
+  if (rowSyncId) {
+    workspaceRowSyncIds.add(rowSyncId);
+    renderList();
+  }
   const selectedLetter = selectedLetterFromGroup(targetGroup);
   let letter = canUseLetterForHistory(selectedLetter) ? selectedLetter : historyLetterForGroup(targetGroup);
   if (!letter?.messageLink && options.allowInboxScan !== false && targetGroup?.id) {
@@ -3494,6 +3499,7 @@ async function loadWorkspaceHistoryIntoPanel(group, options = {}) {
     return null;
   } finally {
     workspaceHistoryLoadingIds.delete(key);
+    if (rowSyncId) workspaceRowSyncIds.delete(rowSyncId);
     if (triggerButton) {
       const currentGroup = findGroup(workspaceSelectedId);
       const currentSelectedLetter = selectedLetterFromGroup(currentGroup);
@@ -3856,7 +3862,7 @@ function selectLetterGroup(id, letterKey = '') {
   renderList();
   renderDialog(nextGroup);
   if (workspaceListFilter === 'inbox' && !letterKey) {
-    loadWorkspaceHistoryIntoPanel(nextGroup, { force: true, silent: true });
+    loadWorkspaceHistoryIntoPanel(nextGroup, { force: true, silent: true, rowIndicator: true });
   }
   if (workspaceListFilter === 'inbox' && letterKey) loadSelectedLetterBody();
   return previousSelectedId !== workspaceSelectedId || previousSelectedLetterKey !== workspaceSelectedLetterKey;
@@ -4766,7 +4772,6 @@ menList.addEventListener('click', event => {
   const button = event.target.closest('.workspace-man');
   if (button) {
     selectLetterGroup(button.dataset.id, button.dataset.letterKey || '');
-    autoSyncSelectedManFromList();
   }
 });
 
@@ -4806,7 +4811,6 @@ menList.addEventListener('keydown', event => {
   if (!item) return;
   event.preventDefault();
   selectLetterGroup(item.dataset.id, item.dataset.letterKey || '');
-  autoSyncSelectedManFromList();
 });
 
 document.addEventListener('click', event => {
@@ -5254,8 +5258,7 @@ if (topOnlineBtn) topOnlineBtn.addEventListener('click', () => {
   renderCurrentWorkspaceState();
 
   if (workspaceListFilter === 'inbox') {
-    if (hasRecentUnansweredInboxLetters()) playInboxNewMessageSound();
-    await openWorkspaceInbox(button);
+    await openWorkspaceInbox(button, { scan: false });
   }
 
   if (workspaceListFilter === 'read') {
