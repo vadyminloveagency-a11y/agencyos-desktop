@@ -473,14 +473,41 @@ function cleanWorkspaceAttachments(value) {
       const localUrl = String(item?.localUrl || '').trim();
       const dedupeKey = localUrl || url;
       if (!dedupeKey || seen.has(dedupeKey)) return null;
-      if (/emoji|smil|emoticon|logo|banner|sprite|icon|captcha|avatar|placeholder|loader|spinner/i.test(url)) return null;
+      if (workspaceMediaUrlLooksPageChrome(url)) return null;
       seen.add(dedupeKey);
       const rawType = String(item?.type || '').toLowerCase();
       const type = rawType === 'video' || /\.(mp4|webm|mov|m4v)(?:[?#]|$)/i.test(url) ? 'video' : 'image';
-      return { type, url: localUrl || url, sourceUrl: localUrl ? url : '', localUrl };
+      return { type, url: localUrl || url, sourceUrl: localUrl ? url : String(item?.sourceUrl || ''), localUrl, label: item?.label || '' };
     })
     .filter(Boolean)
     .slice(0, 12);
+}
+
+function workspaceMediaUrlLooksPageChrome(url = '') {
+  const marker = String(url || '').toLowerCase();
+  if (!marker) return true;
+  return /logo|banner|sprite|icon|captcha|avatar|placeholder|loader|spinner|emoji|smil|emoticon|profile-picture|profile_avatar|profile-avatar|header|footer|navbar|navigation|menu|button|background|\/(?:assets|static|css|js|fonts?)\/|\/(?:img|image|images|icons?)\/(?:common|layout|site|header|footer|logo|banner|sprite|icon|btn|button|bg|background|loader|spinner)/i.test(marker);
+}
+
+function workspaceMediaUrlLooksLikeAttachment(url = '', type = 'image') {
+  let parsed;
+  try {
+    parsed = new URL(String(url || ''), DREAM_INBOX_URL);
+  } catch {
+    return false;
+  }
+  const host = parsed.hostname.toLowerCase();
+  const pathValue = decodeURIComponent(parsed.pathname || '').toLowerCase();
+  const marker = `${host}${pathValue} ${parsed.search || ''}`.toLowerCase();
+  if (workspaceMediaUrlLooksPageChrome(marker)) return false;
+  if (/dream-marriage-attach\.s3\.amazonaws\.com$/i.test(host) && /\/msg\//i.test(pathValue)) return true;
+  if (/(^|\.)dream-singles\.com$/i.test(host) && /\/members\/messaging\/(?:attachment|downloadattachment|getattachment|viewattachment|showattachment|messageattachment|getmessageattachment|photoattachment|videoattachment)(?:\/|$)/i.test(pathValue)) return true;
+  if (/(^|\.)profile-photos-cdn\.dream-singles\.com$/i.test(host) && /(?:attach|attachment|message|messaging|mail|letter|media|gallery|uploads?)/i.test(marker)) return true;
+  if (/(^|\.)dream-singles\.com$/i.test(host) && /(?:attach|attachment|message|messaging|mail|letter|media|gallery|uploads?|download)/i.test(marker)) {
+    if (type === 'video') return /\.(?:mp4|webm|mov|m4v)(?:[?#]|$)/i.test(parsed.href) || /(?:video|boomerang|movie|play)/i.test(marker);
+    return /\.(?:jpe?g|png|webp|gif|bmp|avif)(?:[?#]|$)/i.test(parsed.href) || /(?:photo|image|attachment|download)/i.test(marker);
+  }
+  return false;
 }
 
 function workspaceMessageIdentity(value = '') {
@@ -674,8 +701,9 @@ function workspaceMediaResponseLooksUseful(url = '', contentType = '', bytesLeng
     /profile-photos-cdn\.dream-singles\.com\//i.test(url) ||
     /dream-marriage-attach\.s3\.amazonaws\.com\/msg\//i.test(url);
   if (!url || !allowedDreamMediaHost) return false;
-  if (/logo|banner|sprite|icon|captcha|avatar|placeholder|loader|spinner|emoji|smil|emoticon|assets\/(?:css|js|img|image|icons?)|\/(?:css|js|fonts?)\//i.test(marker)) return false;
+  if (workspaceMediaUrlLooksPageChrome(url)) return false;
   if (/\/members\/media\/gallery\/(?:loadImages|loadMedia|loadFolders)\b/i.test(marker)) return false;
+  if (!workspaceMediaUrlLooksLikeAttachment(url, type)) return false;
   if (type === 'video') return bytesLength >= 50 * 1024 && /video|mp4|webm|octet-stream|\.mp4|\.webm|\.mov|\.m4v/i.test(marker);
   return bytesLength >= 10 * 1024 && /image|octet-stream|profile-photos-cdn|dream-marriage-attach|attachment|photo|media|gallery|uploads?|\.jpe?g|\.png|\.webp|\.gif/i.test(marker);
 }
@@ -3834,6 +3862,7 @@ function collectWorkspaceLetterHtml(html = '', sourceUrl = DREAM_INBOX_URL, fall
       !/profile-photos-cdn\.dream-singles\.com\//i.test(cleanUrl) &&
       !/dream-marriage-attach\.s3\.amazonaws\.com\/msg\//i.test(cleanUrl)
     ) return;
+    if (!workspaceMediaUrlLooksLikeAttachment(cleanUrl, type)) return;
     seenAttachments.add(cleanUrl);
     attachments.push({ type, url: cleanUrl, label: cleanWorkspaceText(label || '') });
   };
