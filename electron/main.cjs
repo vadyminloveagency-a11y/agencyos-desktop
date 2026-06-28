@@ -715,6 +715,11 @@ ipcMain.handle('agency:navigate', async (_event, action = '') => {
   return { ok: false };
 });
 
+ipcMain.handle('agency:open-devtools', async () => {
+  toggleMainDevTools('button');
+  return { ok: true };
+});
+
 ipcMain.handle('agency:check-for-updates', async () => {
   try {
     const repo = resolveUpdateRepository();

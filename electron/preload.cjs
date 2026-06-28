@@ -62,6 +62,7 @@ contextBridge.exposeInMainWorld('agencyElectron', {
     });
   },
   navigate: async action => ipcRenderer.invoke('agency:navigate', String(action || '')),
+  openDevTools: async () => ipcRenderer.invoke('agency:open-devtools'),
   checkForUpdates: async () => ipcRenderer.invoke('agency:check-for-updates'),
   installUpdate: async () => ipcRenderer.invoke('agency:install-update'),
   openExternalUrl: async url => ipcRenderer.invoke('agency:open-external-url', String(url || ''))
