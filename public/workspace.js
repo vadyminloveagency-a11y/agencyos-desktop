@@ -41,7 +41,9 @@ let workspaceHistoryPage = Math.max(1, Number(sessionStorage.getItem('dream_work
 const WORKSPACE_HISTORY_PAGE_SIZE = 15;
 
 const extensionRequests = new Map();
-const activeProfileId = localStorage.getItem('dream_crm_profile_id') || '';
+const workspaceInitialParams = new URLSearchParams(window.location.search);
+const activeProfileId = workspaceInitialParams.get('profileId') || localStorage.getItem('dream_crm_profile_id') || '';
+if (activeProfileId) localStorage.setItem('dream_crm_profile_id', activeProfileId);
 const workspaceSessionPrefix = `dream_workspace_${activeProfileId || 'default'}`;
 try {
   window.history.replaceState({ workspace: true }, '', window.location.href);

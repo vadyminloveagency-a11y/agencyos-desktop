@@ -1655,7 +1655,23 @@ function reloadWorkspaceEmbed(reason = 'refresh') {
     url.searchParams.set('embedded', '1');
     url.searchParams.set('autoloadInbox', shouldAutoloadInbox ? '1' : '0');
     url.searchParams.set('clearSelection', shouldClearSelection ? '1' : '0');
+    if (activeProfileId) url.searchParams.set('profileId', activeProfileId);
     url.searchParams.set('v', `20260629-agency-inbox-${reasonText}-${Date.now()}`);
+    frame.src = `${url.pathname.split('/').pop()}?${url.searchParams.toString()}`;
+  });
+}
+
+function reloadWorkspaceEmbedForProfile(profileId, reason = 'switch-profile') {
+  const id = String(profileId || activeProfileId || '');
+  [workspaceEmbedFrame, agencyInboxFrame].forEach(frame => {
+    if (!frame) return;
+    const currentSrc = frame.getAttribute('src') || 'workspace.html?embedded=1';
+    const url = new URL(currentSrc, window.location.href);
+    url.searchParams.set('embedded', '1');
+    url.searchParams.set('autoloadInbox', '0');
+    url.searchParams.set('clearSelection', '1');
+    if (id) url.searchParams.set('profileId', id);
+    url.searchParams.set('v', `20260629-profile-${reason}-${Date.now()}`);
     frame.src = `${url.pathname.split('/').pop()}?${url.searchParams.toString()}`;
   });
 }
@@ -2392,7 +2408,7 @@ async function switchWorkingProfile(profileId, options = {}) {
   renderProfileSwitcher(profile);
   updateLadyConnectionButton();
   renderSidebarProfileDock();
-  reloadWorkspaceEmbed(options.reason || 'switch-profile-clear');
+  reloadWorkspaceEmbedForProfile(id, options.reason || 'switch-profile-clear');
   allMen = [];
   chatFavoriteMen = [];
   clearMainVirtualState();
@@ -2407,7 +2423,7 @@ async function switchWorkingProfile(profileId, options = {}) {
     else await loadMen(false).catch(() => {});
     if (document.body.classList.contains('mandarin-home-active')) {
       if ((localStorage.getItem(AGENCY_PANEL_KEY) || '') === 'favorites') activateAgencyPanel('favorites', { reloadFavorites: true, persist: false });
-      if ((localStorage.getItem(AGENCY_PANEL_KEY) || '') === 'inbox') activateAgencyPanel('inbox', { reloadInbox: true, persist: false });
+      if ((localStorage.getItem(AGENCY_PANEL_KEY) || '') === 'inbox') activateAgencyPanel('inbox', { reloadInbox: false, persist: false });
     }
   }
 }
