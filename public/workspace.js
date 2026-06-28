@@ -1211,7 +1211,8 @@ function renderList() {
     inboxFilterBtn.disabled = false;
     inboxFilterBtn.classList.toggle('active', workspaceListFilter === 'inbox');
     inboxFilterBtn.classList.toggle('loading', listLoadingActive && workspaceListFilter === 'inbox');
-    const backgroundDots = workspaceInboxBackgroundScanning
+    const showInboxDots = workspaceInboxBackgroundScanning || (workspaceInboxListLoading && workspaceListLoadingFilter === 'inbox');
+    const backgroundDots = showInboxDots
       ? '<span class="workspace-inbox-bg-dots" aria-label="Background scan"><i></i><i></i><i></i></span>'
       : '';
     inboxFilterBtn.innerHTML = `Inbox <span class="workspace-filter-count-text">+${escapeHtml(inboxUnansweredCount)}</span>${backgroundDots}`;
@@ -5279,9 +5280,7 @@ if (topOnlineBtn) topOnlineBtn.addEventListener('click', () => {
   persistWorkspaceListFilter();
   renderCurrentWorkspaceState();
 
-  if (workspaceListFilter === 'inbox') {
-    await openWorkspaceInbox(button, { scan: false });
-  }
+  if (workspaceListFilter === 'inbox') return;
 
   if (workspaceListFilter === 'read') {
     workspaceListLoadingFilter = 'read';
