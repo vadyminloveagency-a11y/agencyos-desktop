@@ -644,7 +644,11 @@ function playInboxNewMessageSound() {
 
 function incomingLetterIdentity(letter) {
   if (!letter || letter.direction === 'outgoing') return '';
-  return String(letter.key || `${letter.id || ''}:${letter.dateText || ''}:${letter.messageLink || ''}`).trim();
+  const id = String(letter.id || letter.profileId || '').replace(/\D+/g, '') || String(letter.id || letter.profileId || '').trim();
+  const date = String(letter.dateText || '').trim().toLowerCase();
+  const snippet = String(letter.snippet || letter.bodyText || letter.text || '').replace(/\s+/g, ' ').trim().slice(0, 160).toLowerCase();
+  if (id && date && snippet) return `${id}:${date}:${snippet}`;
+  return String(letter.key || letter.messageLink || `${id}:${date}`).trim();
 }
 
 function incomingLetterIdentitySet(letters = workspaceLetters) {
@@ -907,6 +911,8 @@ function groupedLetters(includeReadOnly = false) {
         unreadCount: 0,
         unanswered: false,
         unansweredCount: 0,
+        unreadKeys: new Set(),
+        unansweredKeys: new Set(),
         readByMan: false,
         readByManCount: 0,
         incomingCount: 0,
@@ -927,11 +933,18 @@ function groupedLetters(includeReadOnly = false) {
     if (!group.siteFavoriteUpdatedAt && letter.siteFavoriteUpdatedAt) group.siteFavoriteUpdatedAt = letter.siteFavoriteUpdatedAt;
     const isOutgoing = normalizedLetter.direction === 'outgoing';
     if (!isOutgoing) {
+      const pending = letter.unread === true || letter.unanswered === true;
       group.incomingCount += 1;
       group.unread = group.unread || Boolean(letter.unread);
-      if (letter.unread) group.unreadCount += 1;
-      group.unanswered = group.unanswered || Boolean(letter.unanswered);
-      if (letter.unanswered) group.unansweredCount += 1;
+      if (letter.unread) {
+        group.unreadKeys.add(incomingLetterIdentity(normalizedLetter) || String(normalizedLetter.key || ''));
+        group.unreadCount = group.unreadKeys.size;
+      }
+      group.unanswered = group.unanswered || pending;
+      if (pending) {
+        group.unansweredKeys.add(incomingLetterIdentity(normalizedLetter) || String(normalizedLetter.key || ''));
+        group.unansweredCount = group.unansweredKeys.size;
+      }
     } else if (letter.readByMan === true) {
       group.readByMan = true;
       group.readByManCount += 1;
@@ -948,6 +961,8 @@ function groupedLetters(includeReadOnly = false) {
     .filter(group => group.incomingCount > 0 || (includeReadOnly && group.readByManCount > 0))
     .map(group => ({
       ...group,
+      unreadKeys: undefined,
+      unansweredKeys: undefined,
       letters: group.letters
     }))
     .sort((a, b) => b.latestSortDate - a.latestSortDate);
@@ -1070,9 +1085,9 @@ function renderList() {
   const allGroups = groupedLetters();
   const readGroups = groupedLetters(true);
   const inboxUnansweredCount = allGroups.reduce((total, group) =>
-    total + group.letters.filter(isRecentUnansweredInboxLetter).length, 0);
+    total + Math.max(Number(group.unreadCount || 0), Number(group.unansweredCount || 0)), 0);
   const noReplyCount = allGroups.reduce((total, group) =>
-    total + group.letters.filter(isNoReplyEligibleLetter).length, 0);
+    total + Number(group.unansweredCount || 0), 0);
   const readCount = readGroups.reduce((total, group) =>
     total + group.letters.filter(letter =>
       letter.direction === 'outgoing' &&

@@ -1965,7 +1965,12 @@ function countAgencyPendingLetters(letters = []) {
   const seen = new Set();
   return (Array.isArray(letters) ? letters : []).reduce((count, letter) => {
     if (!isAgencyPendingIncomingLetter(letter)) return count;
-    const key = String(letter?.key || letter?.messageLink || `${letter?.id || ''}:${letter?.dateText || ''}:${letter?.snippet || ''}`).trim();
+    const id = String(letter?.id || letter?.profileId || '').replace(/\D+/g, '') || String(letter?.id || letter?.profileId || '').trim();
+    const date = String(letter?.dateText || '').trim().toLowerCase();
+    const snippet = String(letter?.snippet || letter?.bodyText || letter?.text || '').replace(/\s+/g, ' ').trim().slice(0, 160).toLowerCase();
+    const key = (id && date && snippet)
+      ? `${id}:${date}:${snippet}`
+      : String(letter?.key || letter?.messageLink || `${id}:${date}`).trim();
     if (key && seen.has(key)) return count;
     if (key) seen.add(key);
     return count + 1;
@@ -2288,7 +2293,7 @@ function renderSidebarProfileDock() {
         const name = profile.name && profile.name !== `Profile ${profile.id}` ? profile.name : profile.id;
         const initial = String(name || profile.id || '?').slice(0, 1).toUpperCase();
         const statusText = connecting ? 'Logging in' : connected ? 'Online' : 'Click to login';
-        const pendingCount = Number(profilePendingCounts.get(String(profile.id)) || 0);
+        const pendingCount = connected && !connecting ? Number(profilePendingCounts.get(String(profile.id)) || 0) : 0;
         const pendingBadge = pendingCount > 0
           ? `<span class="sidebar-profile-pending-badge" title="${escapeAttr(`${pendingCount} pending incoming letter${pendingCount === 1 ? '' : 's'}`)}">+${escapeHtml(pendingCount)}</span>`
           : '';
