@@ -10,6 +10,7 @@ let workspaceInboxListLoading = false;
 let workspaceListLoadingFilter = '';
 let workspaceInboxBackgroundScanning = false;
 let workspaceInboxBackgroundTimer = null;
+let workspaceStablePendingCounts = { inboxCount: 0, noReplyCount: 0 };
 let workspaceListPage = 1;
 const WORKSPACE_LIST_PAGE_SIZE = 20;
 let workspaceLetterPage = 1;
@@ -1037,6 +1038,22 @@ function noReplyEligibleCount(letters = workspaceLetters) {
     .filter(Boolean)).size;
 }
 
+function workspaceCurrentPendingCounts() {
+  const nextCounts = {
+    inboxCount: recentUnansweredInboxCount(workspaceLetters),
+    noReplyCount: noReplyEligibleCount(workspaceLetters)
+  };
+  const loading = workspaceInboxListLoading || workspaceInboxBackgroundScanning || Boolean(workspaceListLoadingFilter);
+  if (!loading) {
+    workspaceStablePendingCounts = nextCounts;
+    return nextCounts;
+  }
+  return {
+    inboxCount: Math.max(nextCounts.inboxCount, workspaceStablePendingCounts.inboxCount || 0),
+    noReplyCount: Math.max(nextCounts.noReplyCount, workspaceStablePendingCounts.noReplyCount || 0)
+  };
+}
+
 function sortWorkspaceRows(rows) {
   return [...rows].sort((a, b) => {
     if (workspaceOnlyOnline) {
@@ -1101,8 +1118,9 @@ function renderList() {
     : (workspaceListFilter === 'noreply' ? noReplyRows : filteredGroups());
   hint.textContent = '';
   const readGroups = groupedLetters(true);
-  const inboxUnansweredCount = recentUnansweredInboxCount(workspaceLetters);
-  const noReplyCount = noReplyEligibleCount(workspaceLetters);
+  const pendingCounts = workspaceCurrentPendingCounts();
+  const inboxUnansweredCount = pendingCounts.inboxCount;
+  const noReplyCount = pendingCounts.noReplyCount;
   const readCount = readGroups.reduce((total, group) =>
     total + group.letters.filter(letter =>
       letter.direction === 'outgoing' &&
@@ -1497,6 +1515,7 @@ function renderDisconnectedWorkspace() {
   workspaceSelectedLetterKey = '';
   workspaceInboxListLoading = false;
   workspaceListLoadingFilter = '';
+  workspaceStablePendingCounts = { inboxCount: 0, noReplyCount: 0 };
   updateWorkspaceConnectionToggle(false);
   renderProfileSummary();
   if (hint) hint.textContent = '';
