@@ -1000,10 +1000,12 @@ function isRecentReadLetter(letter) {
 }
 
 function isRecentUnansweredInboxLetter(letter) {
-  const threeMonthsAgo = Date.now() - 90 * 24 * 60 * 60 * 1000;
+  const threeMonthsAgo = Date.now() - 92 * 24 * 60 * 60 * 1000;
+  const sortDate = Number(letter?.sortDate || 0) || parseDateValue(letter?.dateText);
   return letter?.direction !== 'outgoing' &&
-    letter?.unanswered === true &&
-    Number(letter.sortDate || 0) >= threeMonthsAgo;
+    (letter?.unread === true || letter?.unanswered === true) &&
+    sortDate > 0 &&
+    sortDate >= threeMonthsAgo;
 }
 
 function hasRecentUnansweredInboxLetters(letters = workspaceLetters) {
@@ -1011,12 +1013,26 @@ function hasRecentUnansweredInboxLetters(letters = workspaceLetters) {
 }
 
 function isNoReplyEligibleLetter(letter) {
-  const sixMonthsAgo = Date.now() - 183 * 24 * 60 * 60 * 1000;
-  const sortDate = Number(letter?.sortDate || 0);
+  const threeMonthsAgo = Date.now() - 92 * 24 * 60 * 60 * 1000;
+  const sortDate = Number(letter?.sortDate || 0) || parseDateValue(letter?.dateText);
   return letter?.direction !== 'outgoing' &&
-    letter?.unanswered === true &&
+    (letter?.unread === true || letter?.unanswered === true) &&
     sortDate > 0 &&
-    sortDate >= sixMonthsAgo;
+    sortDate >= threeMonthsAgo;
+}
+
+function recentUnansweredInboxCount(letters = workspaceLetters) {
+  return new Set((letters || [])
+    .filter(isRecentUnansweredInboxLetter)
+    .map(incomingLetterIdentity)
+    .filter(Boolean)).size;
+}
+
+function noReplyEligibleCount(letters = workspaceLetters) {
+  return new Set((letters || [])
+    .filter(isNoReplyEligibleLetter)
+    .map(incomingLetterIdentity)
+    .filter(Boolean)).size;
 }
 
 function sortWorkspaceRows(rows) {

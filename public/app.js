@@ -6968,7 +6968,7 @@ agencyClearCacheBtn?.addEventListener('click', async () => {
     alert('Select a profile first.');
     return;
   }
-  const confirmed = confirm('Clear local letter cache on this computer?\n\nThis will remove saved Workspace letters, media list, and downloaded attachments for the selected profile. Dream messages will not be deleted.');
+  const confirmed = confirm('Clear Message History cache on this computer?\n\nThis removes cached history cards, cached media, and downloaded attachments for the selected profile. Men, Inbox rows, and Dream messages will not be deleted.');
   if (!confirmed) return;
   agencyClearCacheBtn.disabled = true;
   agencyClearCacheBtn.classList.add('is-clearing');
@@ -6980,7 +6980,7 @@ agencyClearCacheBtn?.addEventListener('click', async () => {
     });
     const bytes = Number(result?.cleared?.attachmentBytes || 0);
     const mb = bytes ? Math.round((bytes / 1024 / 1024) * 10) / 10 : 0;
-    alert(`Cache cleared.\n\nLetters: ${result?.cleared?.letters || 0}\nMedia items: ${result?.cleared?.media || 0}\nAttachments: ${mb} MB`);
+    alert(`Message History cache cleared.\n\nInbox rows kept: ${result?.cleared?.preservedLetters || 0}\nMedia items: ${result?.cleared?.media || 0}\nAttachments: ${mb} MB`);
     [workspaceEmbedFrame, agencyInboxFrame].forEach(frame => {
       if (!frame) return;
       const url = new URL(frame.getAttribute('src') || 'workspace.html?embedded=1', window.location.href);
