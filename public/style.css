@@ -27805,12 +27805,13 @@ body.mandarin-home-active .agency-shell-sidebar #sidebarProfileDock + .agency-sh
 }
 
 .sidebar-profile-dock-avatar {
+  position: relative;
   width: 30px;
   height: 30px;
   display: grid;
   place-items: center;
   border-radius: 999px;
-  overflow: hidden;
+  overflow: visible;
   background: #2b211d;
   color: #f2d1c5;
   font-size: 11px;
@@ -27849,7 +27850,30 @@ body.mandarin-home-active .agency-shell-sidebar #sidebarProfileDock + .agency-sh
 .sidebar-profile-dock-avatar img {
   width: 100%;
   height: 100%;
+  border-radius: inherit;
   object-fit: cover;
+}
+
+.sidebar-profile-pending-badge {
+  position: absolute;
+  top: -7px;
+  right: -8px;
+  z-index: 2;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid #050505;
+  border-radius: 999px;
+  background: #ef233c;
+  color: #fff;
+  font-size: 9px;
+  font-weight: 950;
+  line-height: 1;
+  box-shadow: 0 2px 8px rgba(239, 35, 60, .38);
+  pointer-events: none;
 }
 
 .sidebar-profile-dock-copy {
