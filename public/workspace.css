@@ -30,7 +30,7 @@ body {
   height: calc(100vh / var(--workspace-zoom));
   min-height: 0;
   display: grid;
-  grid-template-columns: 420px minmax(0, 1fr);
+  grid-template-columns: 378px minmax(0, 1fr);
   background: #0b1016;
   zoom: var(--workspace-zoom);
 }
@@ -3645,7 +3645,7 @@ body.workspace-embedded:not(.workspace-dark-theme) .workspace-man-meta {
 
 /* Compact embedded Inbox sizing, matched to the old workspace panel. */
 body.workspace-embedded .workspace-shell {
-  grid-template-columns: 420px minmax(0, 1fr) !important;
+  grid-template-columns: 378px minmax(0, 1fr) !important;
 }
 
 body.workspace-embedded .workspace-brand {
@@ -3736,7 +3736,7 @@ body.workspace-embedded .workspace-man-date-inline {
 
 /* Reference-style embedded Inbox panel. */
 body.workspace-embedded .workspace-shell {
-  grid-template-columns: 420px minmax(0, 1fr) !important;
+  grid-template-columns: 378px minmax(0, 1fr) !important;
 }
 
 body.workspace-embedded .workspace-list {
@@ -6626,11 +6626,11 @@ body.workspace-embedded .workspace-man > .workspace-online-pill {
 
 /* Remove the leftover gutter between the compact list and the dialog area. */
 body.workspace-embedded .workspace-shell {
-  grid-template-columns: 392px minmax(0, 1fr) !important;
+  grid-template-columns: 353px minmax(0, 1fr) !important;
 }
 
 body.workspace-embedded .workspace-list {
-  width: 392px !important;
+  width: 353px !important;
 }
 
 body.workspace-embedded .workspace-main {
