@@ -154,6 +154,23 @@ function logElectronInfo(label, details = '') {
   }
 }
 
+function enableDevToolsShortcuts(win, label = 'window') {
+  if (!win?.webContents) return;
+  win.webContents.on('before-input-event', (event, input) => {
+    const key = String(input.key || '').toLowerCase();
+    const isDevToolsShortcut = key === 'f12' || (input.control && input.shift && key === 'i');
+    if (!isDevToolsShortcut) return;
+    event.preventDefault();
+    if (win.webContents.isDevToolsOpened()) {
+      win.webContents.closeDevTools();
+      logElectronInfo('devtools-close', label);
+    } else {
+      win.webContents.openDevTools({ mode: 'detach' });
+      logElectronInfo('devtools-open', label);
+    }
+  });
+}
+
 function dreamPartitionForProfile(profileId) {
   return `persist:dream-profile-${String(profileId || '').replace(/[^\w.-]/g, '_')}`;
 }
@@ -253,11 +270,13 @@ function createMainWindow(baseUrl) {
       contextIsolation: true,
       nodeIntegration: false,
       webviewTag: true,
-      sandbox: false
+      sandbox: false,
+      devTools: true
     }
   });
 
   mainWindow.setMenu(null);
+  enableDevToolsShortcuts(mainWindow, 'main');
   mainWindow.webContents.session.clearCache().catch(() => {});
   mainWindow.loadURL(startupUrl);
   const sendMainHome = () => {
