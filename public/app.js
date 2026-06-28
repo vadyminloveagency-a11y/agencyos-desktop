@@ -6980,6 +6980,17 @@ async function runAgencyNavigation(action) {
       agencyRefreshBtn.disabled = true;
       agencyRefreshBtn.classList.add('is-reloading');
     }
+    const activePanel = normalizeAgencyPanel(localStorage.getItem(AGENCY_PANEL_KEY) || 'home');
+    if (activePanel === 'inbox') {
+      refreshWorkspaceEmbedInPlace('toolbar-inbox-scan');
+      setTimeout(() => {
+        if (agencyRefreshBtn) {
+          agencyRefreshBtn.disabled = false;
+          agencyRefreshBtn.classList.remove('is-reloading');
+        }
+      }, 1800);
+      return;
+    }
     requestAnimationFrame(() => {
       setTimeout(() => window.location.reload(), 120);
     });

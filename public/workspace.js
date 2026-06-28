@@ -370,6 +370,28 @@ window.addEventListener('message', event => {
     return;
   }
 
+  if (workspaceEmbedded && event.source === window.parent && event.data?.type === 'AGENCY_WORKSPACE_REFRESH') {
+    if (workspaceInboxListLoading || workspaceListLoadingFilter || workspaceInboxBackgroundScanning) return;
+    const beforeLetters = [...workspaceLetters];
+    workspaceInboxListLoading = true;
+    workspaceListLoadingFilter = 'inbox';
+    renderCurrentWorkspaceState();
+    scanAndSaveInbox(1, { mergeOnly: true, limitRows: false, limitLetters: false })
+      .then(() => reloadWorkspaceInbox())
+      .then(() => {
+        if (hasNewIncomingActivity(beforeLetters, workspaceLetters)) playInboxNewMessageSound();
+        renderCurrentWorkspaceState();
+      })
+      .catch(error => console.warn('Could not refresh workspace view', error))
+      .finally(() => {
+        workspaceInboxListLoading = false;
+        if (workspaceListLoadingFilter === 'inbox') workspaceListLoadingFilter = '';
+        setWorkspaceActionStatus('');
+        renderCurrentWorkspaceState();
+      });
+    return;
+  }
+
   if (event.data?.type === 'DREAM_CRM_STATUS') {
     if (workspaceEmbedded && event.source !== window.parent) return;
     if (!workspaceEmbedded && event.source !== window) return;
