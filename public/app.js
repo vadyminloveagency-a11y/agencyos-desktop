@@ -2353,14 +2353,14 @@ async function connectProfileById(profileId, options = {}) {
     const result = await serverProfileRequestFor(id, 'server-connect', {
       body: { syncInbox: options.syncInbox !== false, maxPages: options.maxPages || 3 }
     });
+    await prepareLocalDreamProfile(id);
+    localStorage.setItem(`dream_team_lady_connected_${id}`, '1');
     setProfilePendingCount(id, countAgencyPendingLetters(result?.letters || []), { playSound: options.playSound !== false });
     refreshProfilePendingCount(id, {
       scan: true,
       maxPages: options.maxPages || 3,
       playSound: options.playSound !== false
     }).catch(() => {});
-    await prepareLocalDreamProfile(id);
-    localStorage.setItem(`dream_team_lady_connected_${id}`, '1');
     return result;
   } finally {
     profileConnectingIds.delete(id);

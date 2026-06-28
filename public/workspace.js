@@ -1082,12 +1082,9 @@ function renderList() {
     ? readRows
     : (workspaceListFilter === 'noreply' ? noReplyRows : filteredGroups());
   hint.textContent = '';
-  const allGroups = groupedLetters();
   const readGroups = groupedLetters(true);
-  const inboxUnansweredCount = allGroups.reduce((total, group) =>
-    total + Math.max(Number(group.unreadCount || 0), Number(group.unansweredCount || 0)), 0);
-  const noReplyCount = allGroups.reduce((total, group) =>
-    total + Number(group.unansweredCount || 0), 0);
+  const inboxUnansweredCount = recentUnansweredInboxCount(workspaceLetters);
+  const noReplyCount = noReplyEligibleCount(workspaceLetters);
   const readCount = readGroups.reduce((total, group) =>
     total + group.letters.filter(letter =>
       letter.direction === 'outgoing' &&
@@ -1918,9 +1915,12 @@ function normalizeWorkspaceHistoryEntries(entries = [], group = {}) {
       const readByMan = item?.readByMan === true;
       const attachmentHash = String(item?.attachmentHash || item?.attachment_hash || '').trim();
       const videoAttachmentHash = String(item?.videoAttachmentHash || item?.video_attachment_hash || '').trim();
-      const direction = readByMan || senderValue === 0 || (myName && authorLower === myName)
+      const explicitDirection = String(item?.direction || '').trim().toLowerCase();
+      const direction = explicitDirection === 'incoming' || explicitDirection === 'outgoing'
+        ? explicitDirection
+        : (readByMan || senderValue === 0 || (myName && authorLower === myName)
         ? 'outgoing'
-        : (manName && authorLower === manName ? 'incoming' : 'incoming');
+        : (manName && authorLower === manName ? 'incoming' : 'incoming'));
       const keySeed = `${author}|${dateText}|${text.slice(0, 140)}|${index}`.toLowerCase();
       return {
         ...item,
@@ -3761,8 +3761,8 @@ function selectLetterGroup(id, letterKey = '') {
   rememberSelectedDialog();
   renderList();
   renderDialog(nextGroup);
-  if (workspaceListFilter === 'inbox' && previousSelectedId !== workspaceSelectedId) {
-    loadWorkspaceHistoryIntoPanel(nextGroup, { silent: true });
+  if (workspaceListFilter === 'inbox' && !letterKey) {
+    loadWorkspaceHistoryIntoPanel(nextGroup, { force: true, silent: true });
   }
   if (workspaceListFilter === 'inbox' && letterKey) loadSelectedLetterBody();
   return previousSelectedId !== workspaceSelectedId || previousSelectedLetterKey !== workspaceSelectedLetterKey;
@@ -4671,11 +4671,7 @@ menList.addEventListener('click', event => {
   }
   const button = event.target.closest('.workspace-man');
   if (button) {
-    const wasSelected = String(button.dataset.id || '') === String(workspaceSelectedId || '');
     selectLetterGroup(button.dataset.id, button.dataset.letterKey || '');
-    if (wasSelected && !button.dataset.letterKey) {
-      loadWorkspaceHistoryIntoPanel(findGroup(workspaceSelectedId), { force: true, silent: true });
-    }
     autoSyncSelectedManFromList();
   }
 });
@@ -4715,11 +4711,7 @@ menList.addEventListener('keydown', event => {
   const item = event.target.closest('.workspace-man');
   if (!item) return;
   event.preventDefault();
-  const wasSelected = String(item.dataset.id || '') === String(workspaceSelectedId || '');
   selectLetterGroup(item.dataset.id, item.dataset.letterKey || '');
-  if (wasSelected && !item.dataset.letterKey) {
-    loadWorkspaceHistoryIntoPanel(findGroup(workspaceSelectedId), { force: true, silent: true });
-  }
   autoSyncSelectedManFromList();
 });
 

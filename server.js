@@ -4247,22 +4247,36 @@ function extractWorkspaceMessageHistoryId(html = '') {
     '';
 }
 
-function parseWorkspaceMessageHistoryJson(text = '', fallbackName = '') {
+function parseWorkspaceMessageHistoryJson(text = '', fallbackName = '', context = {}) {
   let data;
   try {
     data = JSON.parse(String(text || ''));
   } catch {
     return [];
   }
+  const fallbackNameLower = cleanWorkspaceText(fallbackName).toLowerCase();
+  const manId = cleanWorkspaceText(context.manId || '').replace(/\D+/g, '');
   const rows = Array.isArray(data?.results) ? data.results : (Array.isArray(data) ? data : []);
   return rows
     .map(item => {
       const author = cleanWorkspaceText(item?.from_name || item?.author || fallbackName || '');
+      const authorLower = author.toLowerCase();
       const rawHyperlink = String(item?.hyperlink || '');
       const dateText = cleanWorkspaceText(htmlToText(rawHyperlink || item?.date || item?.dateText || ''));
       const timestamp = Number(item?.sent_datetime || item?.timestamp || 0);
       const readAt = Number(item?.read || item?.read_at || item?.readAt || 0) || 0;
       const senderValue = Number(item?.sender);
+      const senderId = cleanWorkspaceText(item?.sender_id || item?.senderId || '');
+      const receiverId = cleanWorkspaceText(item?.receiver_id || item?.receiverId || '');
+      const senderDigits = senderId.replace(/\D+/g, '');
+      const receiverDigits = receiverId.replace(/\D+/g, '');
+      const direction = manId && senderDigits === manId
+        ? 'incoming'
+        : (manId && receiverDigits === manId
+          ? 'outgoing'
+          : (fallbackNameLower && authorLower === fallbackNameLower
+            ? 'incoming'
+            : (Number.isFinite(senderValue) && senderValue === 0 ? 'outgoing' : 'incoming')));
       const body = cleanWorkspaceLetterText(htmlToText(item?.body || item?.message || item?.text || ''), fallbackName);
       const attachmentHash = cleanWorkspaceText(item?.attachment_hash || item?.attachmentHash || '');
       const videoAttachmentHash = cleanWorkspaceText(item?.video_attachment_hash || item?.videoAttachmentHash || '');
@@ -4295,11 +4309,12 @@ function parseWorkspaceMessageHistoryJson(text = '', fallbackName = '') {
           hour: '2-digit',
           minute: '2-digit'
         }) : '',
-        readByMan: senderValue === 0 && readAt > 0,
+        direction,
+        readByMan: direction === 'outgoing' && readAt > 0,
         msgId: cleanWorkspaceText(item?.msgId || item?.msg_id || ''),
         msgHash: cleanWorkspaceText(item?.msg_hash || item?.msgHash || ''),
-        senderId: cleanWorkspaceText(item?.sender_id || item?.senderId || ''),
-        receiverId: cleanWorkspaceText(item?.receiver_id || item?.receiverId || ''),
+        senderId,
+        receiverId,
         sentTimestamp: timestamp || 0,
         directUrl,
         attachmentHash,
@@ -4358,7 +4373,9 @@ function buildWorkspaceHistoryReadUrls(entry = {}, context = {}) {
   const version = cleanWorkspaceText(
     String(context.historyPrefix || '').match(/_v\d+/i)?.[0]?.slice(1) || 'v20250103'
   );
-  const isOutgoing = Number(entry.sender) === 0;
+  const isOutgoing = entry.direction
+    ? entry.direction === 'outgoing'
+    : Number(entry.sender) === 0;
   const boxPrefix = `${isOutgoing ? 'letters_women_sent' : 'letters_read'}_${monthPrefix}_${version}`;
   const url = new URL(`/members/messaging/read/${boxPrefix}:${msgId}`, context.baseUrl || DREAM_INBOX_URL);
   url.searchParams.set('mode', isOutgoing ? 'sent' : 'inbox');
@@ -4367,7 +4384,7 @@ function buildWorkspaceHistoryReadUrls(entry = {}, context = {}) {
   return [url.toString()];
 }
 
-async function collectWorkspaceMessageHistory(profileId, rawUrl = '', fallbackName = '') {
+async function collectWorkspaceMessageHistory(profileId, rawUrl = '', fallbackName = '', fallbackId = '') {
   const composeUrl = await resolveWorkspaceReplyComposeUrl(profileId, rawUrl);
   const page = await dreamSessionFetch(profileId, composeUrl);
   const historyId = extractWorkspaceMessageHistoryId(page.html);
@@ -4380,7 +4397,7 @@ async function collectWorkspaceMessageHistory(profileId, rawUrl = '', fallbackNa
         Referer: page.url || composeUrl
       }
     });
-    const jsonEntries = parseWorkspaceMessageHistoryJson(historyPage.html, fallbackName);
+    const jsonEntries = parseWorkspaceMessageHistoryJson(historyPage.html, fallbackName, { manId: fallbackId });
     if (jsonEntries.length) {
       const historyPrefix = String(historyId || '').split(':')[0] || '';
       const entries = jsonEntries.map(entry => {
@@ -7177,7 +7194,8 @@ app.post('/api/workspace/message-history', async (req, res) => {
     const history = await collectWorkspaceMessageHistory(
       req.profileId,
       url.href,
-      String(req.body?.name || '').trim()
+      String(req.body?.name || '').trim(),
+      String(req.body?.id || '').trim()
     );
     res.json({
       ok: true,
