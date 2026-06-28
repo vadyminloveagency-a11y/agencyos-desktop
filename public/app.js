@@ -1676,6 +1676,23 @@ function reloadWorkspaceEmbedForProfile(profileId, reason = 'switch-profile') {
   });
 }
 
+function switchWorkspaceProfileInPlace(profileId, reason = 'switch-profile') {
+  const id = String(profileId || '');
+  let sent = false;
+  [workspaceEmbedFrame, agencyInboxFrame].forEach(frame => {
+    if (!frame?.contentWindow) return;
+    if (!String(frame.getAttribute('src') || '').includes('workspace.html')) return;
+    frame.contentWindow.postMessage({
+      source: 'agencyos',
+      type: 'AGENCY_WORKSPACE_PROFILE_SWITCH',
+      profileId: id,
+      reason
+    }, '*');
+    sent = true;
+  });
+  if (!sent) reloadWorkspaceEmbedForProfile(id, reason);
+}
+
 function refreshWorkspaceEmbedInPlace(reason = 'refresh') {
   let sent = false;
   [workspaceEmbedFrame, agencyInboxFrame].forEach(frame => {
@@ -2408,7 +2425,7 @@ async function switchWorkingProfile(profileId, options = {}) {
   renderProfileSwitcher(profile);
   updateLadyConnectionButton();
   renderSidebarProfileDock();
-  reloadWorkspaceEmbedForProfile(id, options.reason || 'switch-profile-clear');
+  switchWorkspaceProfileInPlace(id, options.reason || 'switch-profile-clear');
   allMen = [];
   chatFavoriteMen = [];
   clearMainVirtualState();

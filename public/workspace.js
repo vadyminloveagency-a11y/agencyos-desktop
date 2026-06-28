@@ -43,9 +43,9 @@ const WORKSPACE_HISTORY_PAGE_SIZE = 15;
 
 const extensionRequests = new Map();
 const workspaceInitialParams = new URLSearchParams(window.location.search);
-const activeProfileId = workspaceInitialParams.get('profileId') || localStorage.getItem('dream_crm_profile_id') || '';
+let activeProfileId = workspaceInitialParams.get('profileId') || localStorage.getItem('dream_crm_profile_id') || '';
 if (activeProfileId) localStorage.setItem('dream_crm_profile_id', activeProfileId);
-const workspaceSessionPrefix = `dream_workspace_${activeProfileId || 'default'}`;
+let workspaceSessionPrefix = `dream_workspace_${activeProfileId || 'default'}`;
 try {
   window.history.replaceState({ workspace: true }, '', window.location.href);
   window.history.pushState({ workspaceGuard: true }, '', window.location.href);
@@ -162,7 +162,7 @@ const WORKSPACE_FULL_SYNC_PAGES = 9999;
 const WORKSPACE_THEME_KEY = 'dream_global_theme';
 const workspaceUrlParams = new URLSearchParams(window.location.search);
 const workspaceEmbedded = workspaceUrlParams.get('embedded') === '1';
-const workspaceAutoloadInbox = workspaceUrlParams.get('autoloadInbox') === '1';
+let workspaceAutoloadInbox = workspaceUrlParams.get('autoloadInbox') === '1';
 const workspaceClearSelectionOnLoad = workspaceUrlParams.get('clearSelection') === '1';
 const savedWorkspaceListFilter = sessionStorage.getItem(`${workspaceSessionPrefix}_list_filter`) ||
   sessionStorage.getItem('dream_workspace_list_filter') ||
@@ -312,7 +312,64 @@ if (workspaceClearSelectionOnLoad) {
   workspaceSelectedHistoryKey = sessionStorage.getItem(`${workspaceSessionPrefix}_selected_history_key`) || localStorage.getItem(`${workspaceSessionPrefix}_selected_history_key`) || '';
 }
 
+function resetWorkspaceRuntimeForProfile(profileId, options = {}) {
+  activeProfileId = String(profileId || '');
+  workspaceSessionPrefix = `dream_workspace_${activeProfileId || 'default'}`;
+  localStorage.setItem('dream_crm_profile_id', activeProfileId);
+  workspaceLetters = [];
+  workspaceProfiles = [];
+  if (options.clearSelection === false) {
+    workspaceSelectedId = sessionStorage.getItem(`${workspaceSessionPrefix}_selected_id`) || localStorage.getItem(`${workspaceSessionPrefix}_selected_id`) || '';
+    workspaceSelectedLetterKey = sessionStorage.getItem(`${workspaceSessionPrefix}_selected_letter_key`) || localStorage.getItem(`${workspaceSessionPrefix}_selected_letter_key`) || '';
+    workspaceSelectedHistoryKey = sessionStorage.getItem(`${workspaceSessionPrefix}_selected_history_key`) || localStorage.getItem(`${workspaceSessionPrefix}_selected_history_key`) || '';
+  } else {
+    clearSelectedDialog();
+  }
+  workspaceStablePendingCounts = { inboxCount: 0, noReplyCount: 0 };
+  const savedFilter = sessionStorage.getItem(`${workspaceSessionPrefix}_list_filter`) ||
+    sessionStorage.getItem('dream_workspace_list_filter') ||
+    'inbox';
+  workspaceListFilter = ['inbox', 'read', 'noreply'].includes(savedFilter) ? savedFilter : 'inbox';
+  workspaceListPage = Math.max(1, Number(sessionStorage.getItem(`${workspaceSessionPrefix}_list_page_${workspaceListFilter}`) || 1) || 1);
+  workspaceLetterPage = 1;
+  workspaceHistoryPage = Math.max(1, Number(sessionStorage.getItem('dream_workspace_history_page') || 1) || 1);
+  workspaceHistoryCache.clear();
+  workspaceHistoryLoadingIds.clear();
+  workspaceDialogSyncStates.clear();
+  workspaceRowSyncIds.clear();
+  workspaceLetterPageLoading.clear();
+  workspaceLetterVisiblePages.clear();
+  workspaceLetterKnownEndPages.clear();
+  workspaceMediaCache = [];
+  workspaceMediaSelectedId = '';
+  workspaceMediaPreviewId = '';
+  if (workspaceInboxBackgroundTimer) {
+    window.clearInterval(workspaceInboxBackgroundTimer);
+    workspaceInboxBackgroundTimer = null;
+  }
+}
+
+async function switchWorkspaceProfileFromShell(profileId) {
+  const id = String(profileId || '');
+  if (!id || id === activeProfileId) return;
+  try {
+    workspaceAutoloadInbox = false;
+    resetWorkspaceRuntimeForProfile(id, { clearSelection: true });
+    await loadWorkspace();
+  } finally {
+    setWorkspaceActionStatus('');
+  }
+}
+
 window.addEventListener('message', event => {
+  if (workspaceEmbedded && event.source === window.parent && event.data?.type === 'AGENCY_WORKSPACE_PROFILE_SWITCH') {
+    switchWorkspaceProfileFromShell(event.data.profileId).catch(error => {
+      console.warn('Could not switch workspace profile in place', error);
+      menList.innerHTML = `<div class="workspace-muted-state">${escapeHtml(error.message || 'Could not switch profile')}</div>`;
+    });
+    return;
+  }
+
   if (event.data?.type === 'DREAM_CRM_STATUS') {
     if (workspaceEmbedded && event.source !== window.parent) return;
     if (!workspaceEmbedded && event.source !== window) return;
