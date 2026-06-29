@@ -11336,3 +11336,36 @@ body.workspace-dark-theme.workspace-embedded .workspace-history-card .workspace-
   justify-self: end !important;
   margin-left: auto !important;
 }
+
+/* Final embedded inbox column width: keep the men list narrower without touching history. */
+body.workspace-embedded .workspace-shell,
+body.workspace-dark-theme.workspace-embedded .workspace-shell {
+  grid-template-columns: 318px minmax(0, 1fr) !important;
+}
+
+body.workspace-embedded .workspace-list,
+body.workspace-dark-theme.workspace-embedded .workspace-list {
+  width: 318px !important;
+}
+
+/* Final attachment toggle: icon only, no button frame. */
+body.workspace-embedded .workspace-shell .workspace-message-group.incoming .workspace-attachments summary,
+body.workspace-embedded .workspace-shell .workspace-message-group.outgoing .workspace-attachments summary,
+body.workspace-dark-theme.workspace-embedded .workspace-shell .workspace-message-group.incoming .workspace-attachments summary,
+body.workspace-dark-theme.workspace-embedded .workspace-shell .workspace-message-group.outgoing .workspace-attachments summary {
+  min-width: 28px !important;
+  width: 28px !important;
+  height: 28px !important;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 50% !important;
+  background: transparent !important;
+  color: #d27054 !important;
+  box-shadow: none !important;
+}
+
+body.workspace-embedded .workspace-shell .workspace-attachments summary::before,
+body.workspace-dark-theme.workspace-embedded .workspace-shell .workspace-attachments summary::before {
+  display: none !important;
+  content: none !important;
+}

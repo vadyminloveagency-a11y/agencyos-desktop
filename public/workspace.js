@@ -3484,6 +3484,10 @@ async function loadWorkspaceHistoryIntoPanel(group, options = {}) {
     }
   }
   if (!letter?.messageLink) {
+    if (rowSyncId) {
+      workspaceRowSyncIds.delete(rowSyncId);
+      renderList();
+    }
     if (!options.silent) alert('Need at least one saved letter from this man first');
     return null;
   }
@@ -3548,6 +3552,7 @@ function renderAttachments(attachments = []) {
       label: String(item?.label || '').trim()
     }))
     .filter(item => item.url)
+    .filter(item => !(item.type !== 'video' && /video\s+(?:preview|poster|thumb|thumbnail)/i.test(item.label)))
     .slice(0, 12);
 
   if (!cleanAttachments.length) return '';
