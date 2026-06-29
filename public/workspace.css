@@ -7299,16 +7299,7 @@ body.workspace-embedded .workspace-list-loading span:nth-child(3) {
 }
 
 body.workspace-embedded .workspace-inbox-loading {
-  height: 38px !important;
-  margin: 8px 16px 0 !important;
-  display: flex !important;
-  align-items: center !important;
-  justify-content: center !important;
-  gap: 6px !important;
-  border: 1px solid #efb7a6 !important;
-  border-radius: 0 0 9px 9px !important;
-  border-top: 0 !important;
-  background: #fffdfb !important;
+  display: none !important;
 }
 
 body.workspace-embedded .workspace-inbox-loading[hidden] {
@@ -9864,38 +9855,33 @@ body.workspace-embedded .workspace-control-panel .workspace-profile-sync {
 
 /* Letter attachments: clearer toggle and photos that fit the visible reader area. */
 body.workspace-embedded .workspace-attachments summary {
-  min-width: 112px !important;
-  height: 28px !important;
-  padding: 0 12px !important;
-  border-color: rgba(210, 112, 84, .72) !important;
-  background: rgba(210, 112, 84, .14) !important;
+  min-width: 0 !important;
+  width: 32px !important;
+  height: 32px !important;
+  padding: 0 !important;
+  border: 0 !important;
+  background: transparent !important;
   color: #8f422c !important;
-  display: inline-flex !important;
+  display: inline-grid !important;
   align-items: center !important;
-  justify-content: center !important;
-  gap: 7px !important;
-  font-size: 10px !important;
-  font-weight: 800 !important;
+  justify-items: center !important;
   box-shadow: none !important;
+  transform: none !important;
 }
 
 body.workspace-embedded .workspace-attachments summary::before {
-  margin-right: 0 !important;
-  font-size: 10px !important;
-  line-height: 1 !important;
-  color: #d27054 !important;
+  display: none !important;
+  content: none !important;
 }
 
 body.workspace-embedded .workspace-attachments summary:hover,
 body.workspace-embedded .workspace-attachments summary:focus-visible {
-  border-color: #d27054 !important;
-  background: rgba(210, 112, 84, .22) !important;
+  background: transparent !important;
   color: #74311f !important;
+  transform: none !important;
 }
 
 body.workspace-dark-theme.workspace-embedded .workspace-attachments summary {
-  border-color: rgba(210, 112, 84, .62) !important;
-  background: rgba(210, 112, 84, .18) !important;
   color: #f0c5b8 !important;
 }
 
@@ -9904,8 +9890,47 @@ body.workspace-dark-theme.workspace-embedded .workspace-attachments summary::bef
 }
 
 body.workspace-embedded .workspace-attachments[open] .workspace-attachments-closed-label,
-body.workspace-embedded .workspace-attachments:not([open]) .workspace-attachments-open-label {
+body.workspace-embedded .workspace-attachments:not([open]) .workspace-attachments-open-label,
+body.workspace-embedded .workspace-attachments-open-label,
+body.workspace-embedded .workspace-attachments-closed-label {
   display: none !important;
+}
+
+body.workspace-embedded .workspace-attachment-eye {
+  width: 18px !important;
+  height: 18px !important;
+  display: block !important;
+  fill: none !important;
+  stroke: currentColor !important;
+  stroke-width: 1.9 !important;
+  stroke-linecap: round !important;
+  stroke-linejoin: round !important;
+}
+
+body.workspace-embedded .workspace-attachment-loading-dots {
+  height: 24px !important;
+  padding: 7px 10px !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: flex-start !important;
+  gap: 4px !important;
+}
+
+body.workspace-embedded .workspace-attachment-loading-dots i {
+  width: 4px !important;
+  height: 4px !important;
+  border-radius: 50% !important;
+  background: currentColor !important;
+  opacity: .35 !important;
+  animation: workspaceInboxBgDot 1s ease-in-out infinite !important;
+}
+
+body.workspace-embedded .workspace-attachment-loading-dots i:nth-child(2) {
+  animation-delay: .16s !important;
+}
+
+body.workspace-embedded .workspace-attachment-loading-dots i:nth-child(3) {
+  animation-delay: .32s !important;
 }
 
 body.workspace-embedded .workspace-attachment-previews {

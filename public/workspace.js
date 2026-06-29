@@ -1188,7 +1188,7 @@ function renderList() {
   }
   const listLoadingActive = workspaceListLoadingFilter === workspaceListFilter ||
     (workspaceInboxListLoading && workspaceListFilter === 'inbox');
-  if (inboxLoading) inboxLoading.hidden = !listLoadingActive;
+  if (inboxLoading) inboxLoading.hidden = true;
 
   const readRows = readLetterRows();
   const noReplyRows = noReplyLetterRows();
@@ -1207,21 +1207,20 @@ function renderList() {
       Number(letter.sortDate || 0) >= Date.now() - 24 * 60 * 60 * 1000
     ).length, 0);
   if (!['inbox', 'read', 'noreply'].includes(workspaceListFilter)) workspaceListFilter = 'inbox';
+  const loadingDots = '<span class="workspace-inbox-bg-dots" aria-label="Loading"><i></i><i></i><i></i></span>';
   if (inboxFilterBtn) {
     inboxFilterBtn.disabled = false;
     inboxFilterBtn.classList.toggle('active', workspaceListFilter === 'inbox');
     inboxFilterBtn.classList.toggle('loading', listLoadingActive && workspaceListFilter === 'inbox');
     const showInboxDots = workspaceInboxBackgroundScanning || (workspaceInboxListLoading && workspaceListLoadingFilter === 'inbox');
-    const backgroundDots = showInboxDots
-      ? '<span class="workspace-inbox-bg-dots" aria-label="Background scan"><i></i><i></i><i></i></span>'
-      : '';
+    const backgroundDots = showInboxDots ? loadingDots : '';
     inboxFilterBtn.innerHTML = `Inbox <span class="workspace-filter-count-text">+${escapeHtml(inboxUnansweredCount)}</span>${backgroundDots}`;
   }
   if (readFilterBtn) {
     readFilterBtn.disabled = false;
     readFilterBtn.classList.toggle('active', workspaceListFilter === 'read');
     readFilterBtn.classList.toggle('loading', listLoadingActive && workspaceListFilter === 'read');
-    readFilterBtn.innerHTML = `Read <span class="workspace-filter-count-text">${escapeHtml(readCount)}</span>`;
+    readFilterBtn.innerHTML = `Read <span class="workspace-filter-count-text">${escapeHtml(readCount)}</span>${listLoadingActive && workspaceListFilter === 'read' ? loadingDots : ''}`;
   }
   if (copyReadIdsBtn) {
     const readIds = uniqueReadRowIds(readRows);
@@ -1234,7 +1233,7 @@ function renderList() {
     noReplyFilterBtn.disabled = false;
     noReplyFilterBtn.classList.toggle('active', workspaceListFilter === 'noreply');
     noReplyFilterBtn.classList.toggle('loading', listLoadingActive && workspaceListFilter === 'noreply');
-    noReplyFilterBtn.innerHTML = `No Reply <span class="workspace-filter-count-text">+${escapeHtml(noReplyCount)}</span>`;
+    noReplyFilterBtn.innerHTML = `No Reply <span class="workspace-filter-count-text">+${escapeHtml(noReplyCount)}</span>${listLoadingActive && workspaceListFilter === 'noreply' ? loadingDots : ''}`;
   }
   if (onlyOnlineBtn) {
     onlyOnlineBtn.classList.toggle('active', workspaceOnlyOnline);
@@ -3565,9 +3564,17 @@ function renderAttachments(attachments = []) {
   const itemLabel = cleanAttachments.length === 1 ? label : pluralLabel;
   const openText = `Open ${itemLabel}`;
   const hideText = `Hide ${itemLabel}`;
+  const eyeIcon = `
+    <svg class="workspace-attachment-eye" viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6Z"></path>
+      <circle cx="12" cy="12" r="3"></circle>
+    </svg>
+  `;
+  const loadingDots = '<figcaption class="workspace-attachment-loading-dots" aria-label="Loading"><i></i><i></i><i></i></figcaption>';
   return `
     <details class="workspace-attachments" open>
-      <summary>
+      <summary title="${escapeAttr(hideText)}" aria-label="${escapeAttr(hideText)}">
+        ${eyeIcon}
         <span class="workspace-attachments-open-label">${escapeHtml(hideText)}</span>
         <span class="workspace-attachments-closed-label">${escapeHtml(openText)}</span>
       </summary>
@@ -3575,23 +3582,27 @@ function renderAttachments(attachments = []) {
         ${typedAttachments.map((item, index) => {
           const isVideo = item.kind === 'video';
           const label = item.label || (item.kind === 'video' ? 'Video' : (item.kind === 'photo' ? 'Photo' : 'File'));
+          const isLoadingLabel = /^loading\s+(?:photo|video|file|media)/i.test(label);
+          const captionHtml = isLoadingLabel
+            ? loadingDots
+            : `<figcaption>${escapeHtml(label)}</figcaption>`;
           const directVideo = isVideo && /\.(?:mp4|webm|mov|m4v)(?:[?#]|$)/i.test(item.url);
           const fallbackAttr = item.sourceUrl && item.sourceUrl !== item.url
             ? ` data-fallback-src="${escapeAttr(item.sourceUrl)}"`
             : '';
           return directVideo
-            ? `<figure class="workspace-attachment-preview video">
+            ? `<figure class="workspace-attachment-preview video ${isLoadingLabel ? 'loading' : ''}">
                 <video src="${escapeAttr(item.url)}"${fallbackAttr} controls preload="metadata"></video>
-                <figcaption>${escapeHtml(label)}</figcaption>
+                ${captionHtml}
               </figure>`
             : isVideo
-              ? `<figure class="workspace-attachment-preview file">
+              ? `<figure class="workspace-attachment-preview file ${isLoadingLabel ? 'loading' : ''}">
                   <a href="${escapeAttr(item.url)}" target="_blank" rel="noopener">Open video</a>
-                  <figcaption>${escapeHtml(label)}</figcaption>
+                  ${captionHtml}
                 </figure>`
-            : `<figure class="workspace-attachment-preview image">
+            : `<figure class="workspace-attachment-preview image ${isLoadingLabel ? 'loading' : ''}">
                 <img src="${escapeAttr(item.url)}"${fallbackAttr} alt="${escapeAttr(label)}" loading="lazy" decoding="async">
-                <figcaption>${escapeHtml(label)}</figcaption>
+                ${captionHtml}
               </figure>`;
         }).join('')}
       </div>
